@@ -3,6 +3,8 @@ const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 const morgan = require('morgan');
+const compression = require('compression');
+const mongoSanitize = require('express-mongo-sanitize');
 const session = require('express-session');
 const RedisStore = require('connect-redis').default;
 const path = require('path');
@@ -20,8 +22,12 @@ const departmentRoutes = require('./modules/departments/department.routes');
 const docTypeRoutes = require('./modules/doctypes/doctype.routes');
 const reportRoutes = require('./modules/reports/report.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
+const { initFileSizeLimitsFromDb } = require('./modules/documents/document.upload');
 
 const app = express();
+
+// ─── Compression ─────────────────────────────────────────────────────────────
+app.use(compression());
 
 // ─── Security Middleware ───────────────────────────────────────────────────────
 app.set('trust proxy', 1);
@@ -78,6 +84,9 @@ async function initSession() {
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
+// ─── NoSQL Injection Protection ──────────────────────────────────────────────
+app.use(mongoSanitize());
+
 // ─── Logger ───────────────────────────────────────────────────────────────────
 if (config.env !== 'test') {
   app.use(
@@ -119,6 +128,7 @@ app.use((err, req, res, _next) => {
  */
 async function init() {
   await connectDB();
+  await initFileSizeLimitsFromDb();
   await initSession();
 }
 

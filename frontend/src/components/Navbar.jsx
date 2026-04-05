@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
-export default function Navbar() {
+export default function Navbar({ onMenuClick }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [qs, setQs] = useState('');
@@ -16,11 +16,24 @@ export default function Navbar() {
 
   return (
     <nav className="bg-primary shadow-md">
-      <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-4">
+      <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
+        {/* Hamburger button (mobile only) */}
+        {user && (
+          <button
+            onClick={onMenuClick}
+            className="lg:hidden p-2 rounded-lg text-white hover:bg-white/20 transition shrink-0"
+            aria-label="เปิดเมนู"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+        )}
+
         {/* Logo */}
         <div className="flex items-center gap-3 shrink-0">
-          <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center">
-            <span className="text-primary font-bold text-lg">ท</span>
+          <div className="w-9 h-9 bg-white rounded-full flex items-center justify-center">
+            <span className="text-primary font-bold text-base">ท</span>
           </div>
           <div className="text-white hidden sm:block">
             <p className="font-bold text-sm leading-tight">เทศบาลนครนครสวรรค์</p>
@@ -46,7 +59,7 @@ export default function Navbar() {
 
         {/* User info */}
         {user && (
-          <div className="flex items-center gap-4 shrink-0 ml-auto">
+          <div className="flex items-center gap-3 shrink-0 ml-auto">
             <div className="text-white text-sm text-right hidden sm:block">
               <p className="font-medium">{user.firstName} {user.lastName}</p>
               <p className="text-orange-100 text-xs">{user.role} • {user.subDepartment || 'ทั่วไป'}</p>

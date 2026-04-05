@@ -2,7 +2,7 @@
 ## ระบบบริหารจัดการคลังเอกสาร — เทศบาลนครนครสวรรค์
 
 **อัปเดตล่าสุด:** 4 เมษายน 2569  
-**สถานะ:** Production-ready · pm2 online (id 15, 16) · restart count ~446
+**สถานะ:** Production-ready · pm2 online (id 15, 16) · restart count ~449
 
 ---
 
@@ -224,28 +224,60 @@ await Document.updateOne(
 - ✅ `package.json` — ลบ packages ที่ไม่ได้ใช้: `bcrypt`, `compression`, `cookie-parser`, `dotenv-safe`, `file-type`, `hpp`, `jsonwebtoken`, `sharp`, `express-mongo-sanitize`
 - ✅ เพิ่ม `dotenv` แทน `dotenv-safe` (code ใช้ `require('dotenv')` โดยตรง)
 
+### Phase 14 (Backlog Resolution — 4 เม.ย. 2569)
+
+**Security:**
+- ✅ เพิ่ม `express-mongo-sanitize` — ป้องกัน NoSQL injection จาก request body/query/params
+- ✅ เพิ่ม rate limit บน `/api/auth/login` + `/api/auth/callback` (20 req / 15 นาที per IP)
+
+**Performance:**
+- ✅ เพิ่ม `compression` middleware — gzip API responses และ static assets
+- ✅ เพิ่ม sparse index `attachments.sub_id` บน collection `documents`
+
+**Code Cleanup:**
+- ✅ ลบ `parseThaiBEDate` + `formatThaiBEDate` จาก `fiscalYear.js` (dead code)
+- ✅ ลบ `paginate` + `paginatedResponse` จาก `response.js` (dead code)
+- ✅ แก้ bug test: `callback=` → `redirect=` ใน auth redirect test
+- ✅ เพิ่ม unit tests สำหรับ soft-delete flow ใน `backend.test.js` (7 test cases)
+
+**Infrastructure:**
+- ✅ สร้าง `/data/archives/scripts/backup-mongo.sh` — backup + compress + rotate (เก็บ 14 วัน)
+- ✅ เพิ่ม cron job: `0 2 * * *` run backup-mongo.sh → `/var/log/mongo-backup.log`
+- ✅ ติดตั้ง `pm2-logrotate` module (max 50M, retain 7 วัน, compress, rotate 00:00 ทุกวัน)
+- ✅ เปิด Redis AOF persistence (`appendonly yes`) ผ่าน `CONFIG SET` + `CONFIG REWRITE`
+
+### Phase 15 (Mobile UI + Settings Overhaul — 4 เม.ย. 2569)
+
+**Mobile Responsive:**
+- ✅ `Layout.jsx` — เพิ่ม sidebar state + mobile overlay backdrop
+- ✅ `Navbar.jsx` — เพิ่มปุ่ม hamburger ☰ (แสดงเฉพาะ mobile `lg:hidden`)
+- ✅ `Sidebar.jsx` — เปลี่ยนเป็น responsive drawer: desktop = fixed sidebar, mobile = slide-in drawer พร้อมปุ่มปิด
+- ✅ ย้ายเมนู "หน่วยงาน" และ "ประเภทเอกสาร" ออกจาก sidebar → รวมใน Settings tabs
+
+**Settings Page (multi-tab):**
+- ✅ Tab "ทั่วไป" — ตั้งค่า public duration + ขนาดไฟล์สูงสุด (PDF / รูปภาพ)
+- ✅ Tab "หน่วยงาน" — CRUD หน่วยงาน (ย้ายมาจาก `/admin/departments`)
+- ✅ Tab "ประเภทเอกสาร" — CRUD + approve flow (ย้ายมาจาก `/admin/doctypes`)
+- ✅ Tab "Backup" — list ไฟล์, trigger backup ทันที, download
+
+**Backend APIs (admin):**
+- ✅ `GET /api/admin/backups` — รายการไฟล์ backup
+- ✅ `POST /api/admin/backups/trigger` — รัน script backup แบบ non-blocking
+- ✅ `GET /api/admin/backups/:filename/download` — ดาวน์โหลด (path traversal protected)
+
+**Reports Page:**
+- ✅ เพิ่ม StorageSection (admin only) — จำนวนไฟล์, ขนาดที่ใช้, พื้นที่คงเหลือ, disk usage bar, แยกตามนามสกุล
+- ✅ `GET /api/reports/storage` — storage stats จาก filesystem + `df`
+
 ---
 
 ## 6. สิ่งที่ควรทำเพิ่มเติม (Backlog)
 
 ### Security
-- [ ] เปิดใช้ HTTPS/TLS บน Nginx (มี template ใน `/data/archives/nginx.conf` แล้ว)
-- [ ] เพิ่ม `express-mongo-sanitize` กลับมา (หรือใช้ Mongoose sanitize) เพื่อป้องกัน NoSQL injection จาก query params
-- [ ] เพิ่ม rate limit สำหรับ auth endpoints
-
-### Performance
-- [ ] เพิ่ม `compression` middleware ใน `app.js` เพื่อ gzip API responses
-- [ ] Index เพิ่มเติม: `attachments.sub_id` (ตอนนี้ query by `$elemMatch` ไม่มี partial index)
-
-### Code
-- [ ] `parseThaiBEDate` + `formatThaiBEDate` ใน `fiscalYear.js` — ยังไม่ถูกใช้ ลบหรือใช้งานจริง
-- [ ] `paginate` + `paginatedResponse` ใน `response.js` — ยังไม่ถูกใช้ ลบหรือใช้งานจริง
-- [ ] เพิ่ม unit tests สำหรับ soft-delete flow / attachment management
+- [ ] เปิดใช้ HTTPS/TLS บน Nginx (มี template ใน `/data/archives/nginx.conf` แล้ว) — ข้ามได้ถ้าใช้ Cloudflare proxy
 
 ### Infrastructure
-- [ ] Backup MongoDB อัตโนมัติ
-- [ ] Log rotation สำหรับ pm2 logs
-- [ ] Redis persistence (`appendonly yes`)
+- [ ] ตรวจสอบว่า `/data/backups/mongodb/` มีพื้นที่เพียงพอ (backup ทำงานตี 2 ทุกวัน)
 
 ---
 

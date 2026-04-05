@@ -342,6 +342,19 @@ async function downloadAttachment(req, res) {
       .lean();
     if (!doc) return sendError(res, 404, 'ไม่พบเอกสาร');
 
+    // ตรวจสิทธิ์การเข้าถึงเอกสาร
+    const userRole = req.user?.role;
+    if (!['superadmin', 'admin', 'manager'].includes(userRole)) {
+      const now = new Date();
+      const isPublicActive = doc.is_public &&
+        (!doc.public_expires_at || new Date(doc.public_expires_at) > now);
+      const isSameDept = req.user?.deptId &&
+        String(doc.dept_id) === String(req.user.deptId);
+      if (!isPublicActive && !isSameDept) {
+        return sendError(res, 403, 'คุณไม่มีสิทธิ์เข้าถึงเอกสารนี้');
+      }
+    }
+
     const att = doc.attachments.find((a) => a.sub_id === req.params.subId);
     if (!att) return sendError(res, 404, 'ไม่พบไฟล์แนบ');
 
@@ -486,6 +499,19 @@ async function viewImage(req, res) {
       .select('+images.file_path')
       .lean();
     if (!doc) return sendError(res, 404, 'ไม่พบเอกสาร');
+
+    // ตรวจสิทธิ์การเข้าถึงเอกสาร
+    const userRoleImg = req.user?.role;
+    if (!['superadmin', 'admin', 'manager'].includes(userRoleImg)) {
+      const nowImg = new Date();
+      const isPublicActiveImg = doc.is_public &&
+        (!doc.public_expires_at || new Date(doc.public_expires_at) > nowImg);
+      const isSameDeptImg = req.user?.deptId &&
+        String(doc.dept_id) === String(req.user.deptId);
+      if (!isPublicActiveImg && !isSameDeptImg) {
+        return sendError(res, 403, 'คุณไม่มีสิทธิ์เข้าถึงเอกสารนี้');
+      }
+    }
 
     const idx = parseInt(req.params.index, 10);
     const img = doc.images[idx];

@@ -76,5 +76,6 @@ documentSchema.index({ created_by: 1 });
 documentSchema.index({ deleted_at: 1 });
 documentSchema.index({ title: 'text', description: 'text', tags: 'text' });
 documentSchema.index({ starred_by: 1 });
+documentSchema.index({ 'attachments.sub_id': 1 }, { sparse: true });
 
 module.exports = mongoose.model('Document', documentSchema);

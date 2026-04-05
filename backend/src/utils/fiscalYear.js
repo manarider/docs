@@ -38,23 +38,4 @@ const getFiscalYearRange = (fiscalYearBE) => {
   };
 };
 
-/**
- * แปลงวันที่ dd/MM/yyyy (พ.ศ.) → Date object (ค.ศ.)
- */
-const parseThaiBEDate = (str) => {
-  if (!str) return null;
-  const [d, m, yBE] = str.split('/').map(Number);
-  return dayjs.tz(`${yBE - 543}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`, TZ).toDate();
-};
-
-/**
- * แปลง Date → dd/MM/yyyy (พ.ศ.)
- */
-const formatThaiBEDate = (date) => {
-  if (!date) return '';
-  const d = dayjs(date).tz(TZ);
-  const yBE = d.year() + 543;
-  return `${String(d.date()).padStart(2,'0')}/${String(d.month()+1).padStart(2,'0')}/${yBE}`;
-};
-
-module.exports = { getFiscalYear, getFiscalYearRange, parseThaiBEDate, formatThaiBEDate };
+module.exports = { getFiscalYear, getFiscalYearRange };

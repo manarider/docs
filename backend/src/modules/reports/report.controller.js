@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const mongoose = require('mongoose');
 const Document = require('../../models/Document');
 const AuditLog = require('../../models/AuditLog');
@@ -82,7 +84,10 @@ async function auditLog(req, res) {
     const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10)));
 
     const filter = {};
-    if (user) filter.username = { $regex: user, $options: 'i' };
+    if (user) {
+      const escaped = user.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.username = { $regex: escaped, $options: 'i' };
+    }
     if (action) filter.action = action;
     if (mod) filter.module = mod;
     if (from || to) {
@@ -146,4 +151,69 @@ async function downloadReport(req, res) {
   }
 }
 
-module.exports = { summary, auditLog, downloadReport };
+const config = require('../../config');
+
+/**
+ * คำนวณขนาดไฟล์ทั้งหมดในโฟลเดอร์ (recursive)
+ */
+function getDirStats(dirPath) {
+  if (!fs.existsSync(dirPath)) return { totalSize: 0, fileCount: 0, byExt: {} };
+  let totalSize = 0;
+  let fileCount = 0;
+  const byExt = {};
+
+  const walk = (dir) => {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      } else if (entry.isFile()) {
+        const stat = fs.statSync(fullPath);
+        totalSize += stat.size;
+        fileCount++;
+        const ext = path.extname(entry.name).toLowerCase() || 'ไม่มีนามสกุล';
+        byExt[ext] = (byExt[ext] || 0) + 1;
+      }
+    }
+  };
+  walk(dirPath);
+  return { totalSize, fileCount, byExt };
+}
+
+/**
+ * GET /api/reports/storage
+ * ข้อมูลพื้นที่จัดเก็บไฟล์ (admin only)
+ */
+async function storageStats(req, res) {
+  try {
+    const storagePath = config.storage.basePath;
+    const { totalSize, fileCount, byExt } = getDirStats(storagePath);
+
+    // หาพื้นที่ดิสก์รวมด้วย statvfs-like approach ผ่าน /proc
+    let diskTotal = null;
+    let diskFree = null;
+    try {
+      const { execSync } = require('child_process');
+      const dfOut = execSync(`df -B1 "${storagePath}" 2>/dev/null | tail -1`, { timeout: 3000 }).toString().trim();
+      const parts = dfOut.split(/\s+/);
+      if (parts.length >= 4) {
+        diskTotal = parseInt(parts[1], 10);
+        diskFree = parseInt(parts[3], 10);
+      }
+    } catch (_) { /* ไม่บังคับ */ }
+
+    return sendSuccess(res, {
+      storagePath,
+      totalSize,
+      fileCount,
+      byExt,
+      disk: diskTotal != null ? { total: diskTotal, free: diskFree, used: diskTotal - diskFree } : null,
+    }, 'storage stats');
+  } catch (err) {
+    logger.error('[Report] storageStats error:', err.message);
+    return sendError(res, 500, 'เกิดข้อผิดพลาด');
+  }
+}
+
+module.exports = { summary, auditLog, downloadReport, storageStats };

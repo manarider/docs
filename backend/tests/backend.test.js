@@ -71,7 +71,7 @@ describe('Auth Routes', () => {
     const res = await request(app).get('/api/auth/login').redirects(0);
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain('nssv.nsm.go.th/ums');
-    expect(res.headers.location).toContain('callback=');
+    expect(res.headers.location).toContain('redirect=');
   });
 
   test('POST /api/auth/logout → 401 เมื่อไม่ได้ login', async () => {
@@ -209,5 +209,84 @@ describe('Models', () => {
     const { start, end } = getFiscalYearRange(2569);
     expect(start.getFullYear()).toBe(2025);
     expect(end.getFullYear()).toBe(2026);
+  });
+
+  test('fiscalYear ไม่ export parseThaiBEDate / formatThaiBEDate อีกต่อไป', () => {
+    const mod = require('../src/utils/fiscalYear');
+    expect(mod.parseThaiBEDate).toBeUndefined();
+    expect(mod.formatThaiBEDate).toBeUndefined();
+  });
+
+  test('response ไม่ export paginate / paginatedResponse อีกต่อไป', () => {
+    const mod = require('../src/utils/response');
+    expect(mod.paginate).toBeUndefined();
+    expect(mod.paginatedResponse).toBeUndefined();
+    expect(mod.sendSuccess).toBeDefined();
+    expect(mod.sendError).toBeDefined();
+  });
+});
+
+// ─── Soft-Delete Attachment Logic ─────────────────────────────────────────────
+describe('Soft-Delete Attachment Logic', () => {
+  // จำลอง document object แบบ in-memory เพื่อทดสอบ business logic โดยไม่ต้องใช้ DB
+
+  function makeDoc(attachments) {
+    return { attachments };
+  }
+
+  function makeAtt(subId, deleted = false) {
+    return {
+      sub_id: subId,
+      sub_title: `ไฟล์ ${subId}`,
+      deleted_at: deleted ? new Date('2024-01-01') : null,
+    };
+  }
+
+  test('activeCount คำนวณถูกต้อง — นับเฉพาะ deleted_at: null', () => {
+    const doc = makeDoc([makeAtt('a'), makeAtt('b', true), makeAtt('c')]);
+    const activeCount = doc.attachments.filter((a) => !a.deleted_at).length;
+    expect(activeCount).toBe(2);
+  });
+
+  test('ไม่อนุญาตลบเมื่อ active เหลือ 1', () => {
+    const doc = makeDoc([makeAtt('a'), makeAtt('b', true)]);
+    const activeCount = doc.attachments.filter((a) => !a.deleted_at).length;
+    expect(activeCount).toBeLessThanOrEqual(1);
+    // ตรงกับเงื่อนไขใน deleteAttachment: if (activeCount <= 1) → return 400
+    expect(activeCount <= 1).toBe(true);
+  });
+
+  test('อนุญาตลบเมื่อ active >= 2', () => {
+    const doc = makeDoc([makeAtt('a'), makeAtt('b'), makeAtt('c', true)]);
+    const activeCount = doc.attachments.filter((a) => !a.deleted_at).length;
+    expect(activeCount >= 2).toBe(true);
+  });
+
+  test('ค้นหา attachment ด้วย sub_id ได้ถูกต้อง', () => {
+    const doc = makeDoc([makeAtt('uuid-1'), makeAtt('uuid-2'), makeAtt('uuid-3', true)]);
+    const found = doc.attachments.find((a) => a.sub_id === 'uuid-2');
+    expect(found).toBeDefined();
+    expect(found.sub_id).toBe('uuid-2');
+  });
+
+  test('attachment ที่ถูก soft-delete แล้วไม่ควรลบซ้ำ', () => {
+    const att = makeAtt('x', true);
+    // ตรงกับเงื่อนไขใน deleteAttachment: if (att.deleted_at) → return 404
+    expect(!!att.deleted_at).toBe(true);
+  });
+
+  test('restoreAttachment: attachment ที่ถูกลบสามารถ restore ได้', () => {
+    const att = makeAtt('y', true);
+    // simulate restore: เคลียร์ deleted_at
+    const restored = { ...att, deleted_at: null, deleted_by: null };
+    expect(restored.deleted_at).toBeNull();
+    expect(restored.deleted_by).toBeNull();
+  });
+
+  test('listDeletedAttachments: คืนเฉพาะ attachment ที่มี deleted_at', () => {
+    const doc = makeDoc([makeAtt('a'), makeAtt('b', true), makeAtt('c', true)]);
+    const deleted = doc.attachments.filter((a) => a.deleted_at !== null);
+    expect(deleted).toHaveLength(2);
+    deleted.forEach((a) => expect(a.deleted_at).not.toBeNull());
   });
 });

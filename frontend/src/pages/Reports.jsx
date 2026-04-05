@@ -26,6 +26,104 @@ function BarRow({ label, count, max }) {
   );
 }
 
+function fmtBytes(bytes) {
+  if (bytes == null || isNaN(bytes)) return '-';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+}
+
+function StorageSection() {
+  const [storage, setStorage] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/reports/storage')
+      .then(({ data }) => setStorage(data.data))
+      .catch(() => toast.error('โหลดข้อมูลพื้นที่ไม่สำเร็จ'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return (
+    <div className="bg-white rounded-xl shadow p-5 animate-pulse">
+      <div className="h-5 w-40 bg-gray-200 rounded mb-4" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[...Array(4)].map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-lg" />)}
+      </div>
+    </div>
+  );
+
+  if (!storage) return null;
+
+  const { totalSize, fileCount, byExt, disk } = storage;
+  const diskPct = disk ? Math.min(100, ((disk.used / disk.total) * 100).toFixed(1)) : null;
+
+  return (
+    <div className="bg-white rounded-xl shadow p-5 space-y-4">
+      <h3 className="font-semibold text-gray-700">พื้นที่จัดเก็บเอกสาร</h3>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-blue-50 rounded-xl p-4">
+          <p className="text-2xl font-bold text-blue-700">{fileCount.toLocaleString()}</p>
+          <p className="text-xs text-blue-500 mt-1">ไฟล์ทั้งหมด</p>
+        </div>
+        <div className="bg-orange-50 rounded-xl p-4">
+          <p className="text-2xl font-bold text-orange-600">{fmtBytes(totalSize)}</p>
+          <p className="text-xs text-orange-400 mt-1">ขนาดที่ใช้</p>
+        </div>
+        {disk && (
+          <>
+            <div className="bg-green-50 rounded-xl p-4">
+              <p className="text-2xl font-bold text-green-600">{fmtBytes(disk.free)}</p>
+              <p className="text-xs text-green-500 mt-1">พื้นที่คงเหลือ</p>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-4">
+              <p className="text-2xl font-bold text-gray-600">{fmtBytes(disk.total)}</p>
+              <p className="text-xs text-gray-400 mt-1">ความจุดิสก์รวม</p>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Disk usage bar */}
+      {diskPct != null && (
+        <div>
+          <div className="flex justify-between text-xs text-gray-500 mb-1">
+            <span>การใช้งานดิสก์</span>
+            <span>{diskPct}%</span>
+          </div>
+          <div className="w-full bg-gray-100 rounded-full h-3">
+            <div
+              className={`h-3 rounded-full transition-all ${diskPct > 85 ? 'bg-red-500' : diskPct > 70 ? 'bg-yellow-400' : 'bg-green-500'}`}
+              style={{ width: `${diskPct}%` }}
+            />
+          </div>
+          {diskPct > 85 && (
+            <p className="text-xs text-red-600 mt-1">⚠️ พื้นที่เหลือน้อย กรุณาตรวจสอบ</p>
+          )}
+        </div>
+      )}
+
+      {/* File by extension */}
+      {byExt && Object.keys(byExt).length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-gray-500 mb-2">แยกตามประเภทไฟล์</p>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(byExt)
+              .sort((a, b) => b[1] - a[1])
+              .map(([ext, cnt]) => (
+                <span key={ext} className="bg-gray-100 text-gray-700 text-xs px-3 py-1 rounded-full">
+                  {ext} <span className="font-semibold">{cnt}</span>
+                </span>
+              ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Statistics() {
   const { user } = useAuth();
   const isAdmin = ['admin', 'superadmin', 'manager'].includes(user?.role);
@@ -142,6 +240,9 @@ export default function Statistics() {
               </ol>
             </div>
           )}
+
+          {/* Storage (admin only) */}
+          {isAdmin && <StorageSection />}
 
           {data.totalDocs === 0 && (
             <div className="bg-white rounded-xl shadow p-12 text-center text-gray-400">

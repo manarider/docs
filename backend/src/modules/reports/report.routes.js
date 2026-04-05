@@ -1,11 +1,14 @@
 const { Router } = require('express');
 const { authenticate, requireRole } = require('../../middleware/authenticate');
-const { summary, auditLog, downloadReport } = require('./report.controller');
+const { summary, auditLog, downloadReport, storageStats } = require('./report.controller');
 
 const router = Router();
 
 // สถิติเอกสาร (ทุกคนเข้าถึงได้ — scoped ตามหน่วยงานสำหรับ non-admin)
 router.get('/summary', authenticate, summary);
+
+// Storage stats (admin only)
+router.get('/storage', authenticate, requireRole('admin'), storageStats);
 
 // Audit log (admin+)
 router.get('/audit', authenticate, requireRole('admin'), auditLog);
