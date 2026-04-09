@@ -62,6 +62,9 @@ export default function DocumentDetail() {
   };
 
   const handleView = async (att) => {
+    // เฉพาะ PDF เท่านั้นที่รองรับพรีวิว
+    if (att.mime_type !== 'application/pdf') return;
+
     if (viewingAtt?.sub_id === att.sub_id) {
       // toggle ปิด
       window.URL.revokeObjectURL(viewingAtt.blobUrl);
@@ -211,31 +214,46 @@ export default function DocumentDetail() {
           <div className="space-y-2">
             {doc.attachments.map((att) => {
               const isOpen = viewingAtt?.sub_id === att.sub_id;
+              const isPdf = att.mime_type === 'application/pdf';
+              const isGoogleUrl = att.att_type === 'google_url';
               return (
                 <div key={att.sub_id} className="border border-gray-100 rounded-lg overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
                     <div>
                       <p className="text-sm font-medium text-gray-700">{att.sub_title}</p>
                       <p className="text-xs text-gray-400">
-                        {att.original_name} — {(att.file_size / 1024).toFixed(1)} KB
+                        {isGoogleUrl ? '🔗 Google Docs/Sheets' : `${att.original_name} — ${(att.file_size / 1024).toFixed(1)} KB`}
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => handleView(att)}
-                        disabled={viewLoading}
-                        className="text-primary text-sm font-medium hover:underline disabled:opacity-50"
-                      >
-                        {isOpen ? 'ซ่อน' : (viewLoading ? 'กำลังโหลด...' : 'ดูเอกสาร')}
-                      </button>
-                      <button
-                        onClick={() => handleDownload(att.sub_id, att.original_name)}
-                        className="text-gray-500 text-sm hover:underline"
-                      >ดาวน์โหลด</button>
+                      {isGoogleUrl ? (
+                        <a
+                          href={att.source_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 text-sm font-medium hover:underline"
+                        >เปิดลิงก์</a>
+                      ) : (
+                        <>
+                          {isPdf && (
+                            <button
+                              onClick={() => handleView(att)}
+                              disabled={viewLoading}
+                              className="text-primary text-sm font-medium hover:underline disabled:opacity-50"
+                            >
+                              {isOpen ? 'ซ่อน' : (viewLoading ? 'กำลังโหลด...' : 'ดูเอกสาร')}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDownload(att.sub_id, att.original_name)}
+                            className="text-gray-500 text-sm hover:underline"
+                          >ดาวน์โหลด</button>
+                        </>
+                      )}
                     </div>
                   </div>
 
-                  {/* Inline PDF Viewer */}
+                  {/* Inline PDF Viewer — เฉพาะ PDF เท่านั้น */}
                   {isOpen && viewingAtt?.blobUrl && (
                     <div className="border-t border-gray-100">
                       <div className="flex items-center justify-between px-4 py-2 bg-gray-50">

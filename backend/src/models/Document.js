@@ -5,11 +5,13 @@ const attachmentSchema = new mongoose.Schema(
   {
     sub_id: { type: String, required: true }, // uuid
     sub_title: { type: String, required: true, maxlength: 500 },
-    file_path: { type: String, required: true, select: false },
-    file_size: { type: Number, required: true }, // bytes
-    mime_type: { type: String, required: true },
-    original_name: { type: String, required: true, maxlength: 500 },
-    checksum: { type: String, required: true, select: false }, // SHA-256
+    att_type: { type: String, enum: ['file', 'google_url'], default: 'file' },
+    file_path: { type: String, select: false },                        // เฉพาะ att_type='file'
+    file_size: { type: Number },                                       // bytes
+    mime_type: { type: String },
+    original_name: { type: String, maxlength: 500 },
+    checksum: { type: String, select: false },                         // SHA-256
+    source_url: { type: String, maxlength: 2048, default: null },      // เฉพาะ att_type='google_url'
     uploaded_at: { type: Date, default: Date.now },
     uploaded_by: { type: mongoose.Schema.Types.ObjectId, required: true },
     deleted_at: { type: Date, default: null },

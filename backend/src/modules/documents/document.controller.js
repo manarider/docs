@@ -333,6 +333,60 @@ async function uploadAttachment(req, res) {
 }
 
 /**
+ * POST /api/documents/:id/attachments/url
+ * เพิ่ม Google Docs / Google Sheets เป็นไฟล์แนบ (เฉพาะ DOW)
+ */
+async function uploadUrlAttachment(req, res) {
+  try {
+    const { sub_title, source_url } = req.body;
+
+    if (!sub_title?.trim()) return sendError(res, 400, 'กรุณาระบุชื่อเอกสารแนบ');
+
+    // ตรวจว่า source_url เป็น Google Docs หรือ Google Sheets
+    const GOOGLE_URL_PATTERN = /https:\/\/docs\.google\.com\/(document|spreadsheets)\//;
+    if (!source_url || !GOOGLE_URL_PATTERN.test(source_url)) {
+      return sendError(res, 400, 'URL ไม่ถูกต้อง รองรับเฉพาะ Google Docs และ Google Sheets เท่านั้น');
+    }
+
+    const doc = await Document.findOne({ _id: req.params.id, deleted_at: null })
+      .populate('type_id', 'code');
+    if (!doc) return sendError(res, 404, 'ไม่พบเอกสาร');
+
+    // เฉพาะเอกสาร DOW เท่านั้น
+    if (doc.type_id?.code?.toUpperCase() !== 'DOW') {
+      return sendError(res, 400, 'สามารถเพิ่มลิงก์ Google ได้เฉพาะเอกสารประเภท DOW เท่านั้น');
+    }
+
+    const subId = uuidv4();
+    doc.attachments.push({
+      sub_id: subId,
+      sub_title: sub_title.trim(),
+      att_type: 'google_url',
+      source_url,
+      uploaded_by: doc.created_by,
+    });
+    await doc.save();
+
+    await logAction({
+      userId: req.user.userId,
+      username: req.user.username,
+      action: 'UPLOAD',
+      module: 'DOCUMENT',
+      resourceId: doc._id,
+      ipAddress: getIp(req),
+      userAgent: req.headers['user-agent'],
+      details: { sub_id: subId, type: 'google_url', source_url },
+    });
+
+    const added = doc.attachments[doc.attachments.length - 1].toObject();
+    return sendSuccess(res, added, 'เพิ่มลิงก์ Google เรียบร้อย');
+  } catch (err) {
+    logger.error('[Document] uploadUrlAttachment error:', err.message);
+    return sendError(res, 500, 'เกิดข้อผิดพลาด');
+  }
+}
+
+/**
  * GET /api/documents/:id/attachments/:subId/download
  * ดาวน์โหลดไฟล์แนบ
  */
@@ -360,6 +414,11 @@ async function downloadAttachment(req, res) {
     if (!att) return sendError(res, 404, 'ไม่พบไฟล์แนบ');
 
     if (att.deleted_at) return sendError(res, 404, 'ไม่พบไฟล์แนบ');
+
+    // google_url ไม่มีไฟล์จริง
+    if (att.att_type === 'google_url') {
+      return sendError(res, 400, 'ไฟล์ประเภทลิงก์ Google ไม่สามารถดาวน์โหลดได้');
+    }
 
     if (!fs.existsSync(att.file_path)) return sendError(res, 404, 'ไฟล์ไม่พบในระบบ');
 
@@ -1048,6 +1107,7 @@ module.exports = {
   updateDocument,
   deleteDocument,
   uploadAttachment,
+  uploadUrlAttachment,
   downloadAttachment,
   deleteAttachment,
   listDeletedAttachments,

@@ -50,6 +50,14 @@ const config = {
     allowedDocMimes: [
       'application/pdf',
     ],
+    // DOW: รองรับ PDF + Word + Excel
+    allowedDowMimes: [
+      'application/pdf',
+      'application/msword',                                                             // .doc
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',       // .docx
+      'application/vnd.ms-excel',                                                      // .xls
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',             // .xlsx
+    ],
     allowedImgMimes: ['image/jpeg', 'image/png', 'image/webp'],
   },
 

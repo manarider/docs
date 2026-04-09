@@ -14,6 +14,7 @@ const {
   updateDocument,
   deleteDocument,
   uploadAttachment,
+  uploadUrlAttachment,
   downloadAttachment,
   deleteAttachment,
   listDeletedAttachments,
@@ -84,6 +85,14 @@ router.post(
   (req, res, next) => uploadDoc(req, res, (err) => { if (err) return handleMulterError(err, req, res, next); next(); }),
   validateUploadAtt,
   uploadAttachment
+);
+
+// เพิ่มลิงก์ Google Docs / Google Sheets (DOW เท่านั้น)
+router.post(
+  '/:id/attachments/url',
+  authenticate,
+  requireRole('member'),
+  uploadUrlAttachment
 );
 
 // ดาวน์โหลดไฟล์แนบ

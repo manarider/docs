@@ -119,26 +119,37 @@ export default function PublicDownload() {
                   <div className="min-w-0 flex-1 mr-3">
                     <p className="text-sm font-medium text-gray-800 truncate">{att.sub_title}</p>
                     <p className="text-xs text-gray-400 truncate">
-                      {att.original_name} — {(att.file_size / 1024).toFixed(1)} KB
+                      {att.att_type === 'google_url'
+                        ? '🔗 Google Docs/Sheets'
+                        : `${att.original_name} — ${(att.file_size / 1024).toFixed(1)} KB`}
                     </p>
                   </div>
-                  <button
-                    onClick={() => handleDownload(att.sub_id, att.original_name)}
-                    disabled={downloading === att.sub_id}
-                    className="shrink-0 flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition disabled:opacity-60"
-                  >
-                    {downloading === att.sub_id ? (
-                      <span className="animate-pulse">กำลังดาวน์โหลด...</span>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
-                        ดาวน์โหลด
-                      </>
-                    )}
-                  </button>
+                  {att.att_type === 'google_url' ? (
+                    <a
+                      href={att.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 flex items-center gap-1.5 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition"
+                    >เปิดลิงก์</a>
+                  ) : (
+                    <button
+                      onClick={() => handleDownload(att.sub_id, att.original_name)}
+                      disabled={downloading === att.sub_id}
+                      className="shrink-0 flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition disabled:opacity-60"
+                    >
+                      {downloading === att.sub_id ? (
+                        <span className="animate-pulse">กำลังดาวน์โหลด...</span>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          ดาวน์โหลด
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

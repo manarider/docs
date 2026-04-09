@@ -4,10 +4,11 @@ import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
 
-const ACCEPT = '.pdf';
-
-function emptyFile() {
-  return { sub_title: '', file: null };
+function emptyFileEntry() {
+  return { entry_type: 'file', sub_title: '', file: null };
+}
+function emptyGoogleEntry() {
+  return { entry_type: 'google', sub_title: '', google_url: '' };
 }
 
 export default function DocumentNew() {
@@ -24,7 +25,7 @@ export default function DocumentNew() {
     type_id: '',
     tags: '',
   });
-  const [files, setFiles] = useState([emptyFile()]);
+  const [files, setFiles] = useState([emptyFileEntry()]);
   const [submitting, setSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null); // null | { current, total, name }
   const blockNavRef = useRef(false);
@@ -55,12 +56,24 @@ export default function DocumentNew() {
     return () => window.removeEventListener('beforeunload', handler);
   }, []);
 
+  // ตรวจว่าประเภทที่เลือกเป็น DOW หรือไม่
+  const selectedType = types.find((t) => t._id === form.type_id);
+  const isDow = selectedType?.code?.toUpperCase() === 'DOW';
+  const acceptStr = isDow ? '.pdf,.doc,.docx,.xls,.xlsx' : '.pdf';
+
   const setFileField = (idx, field, val) => {
     setFiles((prev) => prev.map((f, i) => (i === idx ? { ...f, [field]: val } : f)));
   };
 
-  const addFile = () => setFiles((prev) => [...prev, emptyFile()]);
-  const removeFile = (idx) => setFiles((prev) => prev.filter((_, i) => i !== idx));
+  const addFileEntry = () => setFiles((prev) => [...prev, emptyFileEntry()]);
+  const addGoogleEntry = () => setFiles((prev) => [...prev, emptyGoogleEntry()]);
+  const removeEntry = (idx) => setFiles((prev) => prev.filter((_, i) => i !== idx));
+
+  // รีเซ็ต files เมื่อเปลี่ยนประเภทจาก/ไป DOW
+  const handleTypeChange = (typeId) => {
+    setForm((f) => ({ ...f, type_id: typeId }));
+    setFiles([emptyFileEntry()]);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -68,10 +81,20 @@ export default function DocumentNew() {
     if (!form.dept_id) return toast.error('กรุณาเลือกหน่วยงาน');
     if (!form.type_id) return toast.error('กรุณาเลือกประเภทเอกสาร');
 
-    const validFiles = files.filter((f) => f.file);
-    if (validFiles.length === 0) return toast.error('กรุณาแนบไฟล์เอกสารอย่างน้อย 1 ไฟล์');
+    const validEntries = files.filter((f) =>
+      (f.entry_type === 'file' && f.file) ||
+      (f.entry_type === 'google' && f.google_url.trim())
+    );
+    if (validEntries.length === 0) {
+      return toast.error('กรุณาแนบไฟล์หรือลิงก์ Google อย่างน้อย 1 รายการ');
+    }
     for (const f of files) {
-      if (f.file && !f.sub_title.trim()) return toast.error('กรุณาระบุชื่อไฟล์แนบทุกรายการ');
+      if (f.entry_type === 'file' && f.file && !f.sub_title.trim()) {
+        return toast.error('กรุณาระบุชื่อไฟล์แนบทุกรายการ');
+      }
+      if (f.entry_type === 'google' && f.google_url.trim() && !f.sub_title.trim()) {
+        return toast.error('กรุณาระบุชื่อลิงก์ Google ทุกรายการ');
+      }
     }
 
     setSubmitting(true);
@@ -83,16 +106,28 @@ export default function DocumentNew() {
       });
       const docId = data.data._id;
 
+      let uploadCount = 0;
+      const totalValid = validEntries.length;
+
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
-        if (!f.file) continue;
-        setUploadProgress({ current: i + 1, total: validFiles.length, name: f.file.name });
-        const fd = new FormData();
-        fd.append('file', f.file);
-        fd.append('sub_title', f.sub_title.trim());
-        await api.post(`/documents/${docId}/attachments`, fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        if (f.entry_type === 'file' && f.file) {
+          uploadCount++;
+          setUploadProgress({ current: uploadCount, total: totalValid, name: f.file.name });
+          const fd = new FormData();
+          fd.append('file', f.file);
+          fd.append('sub_title', f.sub_title.trim());
+          await api.post(`/documents/${docId}/attachments`, fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+        } else if (f.entry_type === 'google' && f.google_url.trim()) {
+          uploadCount++;
+          setUploadProgress({ current: uploadCount, total: totalValid, name: f.sub_title || 'Google Link' });
+          await api.post(`/documents/${docId}/attachments/url`, {
+            sub_title: f.sub_title.trim(),
+            source_url: f.google_url.trim(),
+          });
+        }
       }
 
       blockNavRef.current = false;
@@ -161,15 +196,15 @@ export default function DocumentNew() {
               ประเภทเอกสาร <span className="text-red-500">*</span>
             </label>
             <select
-                value={form.type_id}
-                onChange={(e) => setForm({ ...form, type_id: e.target.value })}
-                className={inputClass}
-              >
-                <option value="">-- เลือกประเภท --</option>
-                {types.map((t) => (
-                  <option key={t._id} value={t._id}>{t.name}</option>
-                ))}
-              </select>
+              value={form.type_id}
+              onChange={(e) => handleTypeChange(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">-- เลือกประเภท --</option>
+              {types.map((t) => (
+                <option key={t._id} value={t._id}>{t.name}</option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -203,23 +238,39 @@ export default function DocumentNew() {
         {/* File Attachments */}
         <div className="border-t pt-4 space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-gray-700">
-              ไฟล์แนบ <span className="text-red-500">*</span>
-              <span className="text-xs font-normal text-gray-400 ml-1">(บังคับอย่างน้อย 1 ไฟล์)</span>
-            </p>
-            <button
-              type="button"
-              onClick={addFile}
-              className="flex items-center gap-1 text-primary border border-primary px-3 py-1 rounded-lg text-xs hover:bg-orange-50 transition"
-            >+ เพิ่มไฟล์</button>
+            <div>
+              <p className="text-sm font-medium text-gray-700">
+                ไฟล์แนบ <span className="text-red-500">*</span>
+                <span className="text-xs font-normal text-gray-400 ml-1">(บังคับอย่างน้อย 1 รายการ)</span>
+              </p>
+              {isDow && (
+                <p className="text-xs text-blue-600 mt-0.5">DOW: รองรับ PDF, Word, Excel และลิงก์ Google Docs/Sheets</p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={addFileEntry}
+                className="flex items-center gap-1 text-primary border border-primary px-3 py-1 rounded-lg text-xs hover:bg-orange-50 transition"
+              >+ เพิ่มไฟล์</button>
+              {isDow && (
+                <button
+                  type="button"
+                  onClick={addGoogleEntry}
+                  className="flex items-center gap-1 text-blue-600 border border-blue-400 px-3 py-1 rounded-lg text-xs hover:bg-blue-50 transition"
+                >+ Google Link</button>
+              )}
+            </div>
           </div>
 
           {files.map((f, idx) => (
-            <div key={idx} className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50">
+            <div key={idx} className={`border rounded-lg p-3 space-y-2 ${f.entry_type === 'google' ? 'border-blue-200 bg-blue-50' : 'border-gray-200 bg-gray-50'}`}>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-gray-500">ไฟล์ที่ {idx + 1}</span>
+                <span className="text-xs font-medium text-gray-500">
+                  {f.entry_type === 'google' ? '🔗 ลิงก์ Google ที่ ' : 'ไฟล์ที่ '}{idx + 1}
+                </span>
                 {files.length > 1 && (
-                  <button type="button" onClick={() => removeFile(idx)}
+                  <button type="button" onClick={() => removeEntry(idx)}
                     className="text-red-500 hover:text-red-700 text-xs">ลบ</button>
                 )}
               </div>
@@ -232,24 +283,41 @@ export default function DocumentNew() {
                   value={f.sub_title}
                   onChange={(e) => setFileField(idx, 'sub_title', e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="ระบุชื่อไฟล์แนบ เช่น สัญญาหลัก"
+                  placeholder={f.entry_type === 'google' ? 'เช่น: แบบฟอร์มขอลา (Google Docs)' : 'ระบุชื่อไฟล์แนบ เช่น สัญญาหลัก'}
                   maxLength={500}
                 />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">เลือกไฟล์</label>
-                <input
-                  type="file"
-                  accept={ACCEPT}
-                  onChange={(e) => setFileField(idx, 'file', e.target.files[0] || null)}
-                  className="text-sm text-gray-600"
-                />
-                {f.file && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    {f.file.name} ({(f.file.size / 1024 / 1024).toFixed(1)} MB)
-                  </p>
-                )}
-              </div>
+              {f.entry_type === 'file' ? (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">เลือกไฟล์</label>
+                  <input
+                    type="file"
+                    accept={acceptStr}
+                    onChange={(e) => setFileField(idx, 'file', e.target.files[0] || null)}
+                    className="text-sm text-gray-600"
+                  />
+                  {f.file && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      {f.file.name} ({(f.file.size / 1024 / 1024).toFixed(1)} MB)
+                    </p>
+                  )}
+                  {isDow && (
+                    <p className="text-xs text-gray-400 mt-0.5">รองรับ: PDF, .doc, .docx, .xls, .xlsx</p>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">URL Google Docs / Google Sheets</label>
+                  <input
+                    type="url"
+                    value={f.google_url}
+                    onChange={(e) => setFileField(idx, 'google_url', e.target.value)}
+                    className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    placeholder="https://docs.google.com/document/... หรือ spreadsheets/..."
+                  />
+                  <p className="text-xs text-blue-600 mt-0.5">วาง URL จาก Google Docs หรือ Google Sheets</p>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -280,7 +348,7 @@ export default function DocumentNew() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center space-y-4">
             <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
             <p className="font-semibold text-gray-800">กำลังอัปโหลดเอกสาร...</p>
-            <p className="text-sm text-gray-500">ไฟล์ที่ {uploadProgress.current} / {uploadProgress.total}</p>
+            <p className="text-sm text-gray-500">รายการที่ {uploadProgress.current} / {uploadProgress.total}</p>
             <p className="text-xs text-gray-400 truncate">{uploadProgress.name}</p>
             <div className="w-full bg-gray-100 rounded-full h-2">
               <div
@@ -296,3 +364,4 @@ export default function DocumentNew() {
     </div>
   );
 }
+

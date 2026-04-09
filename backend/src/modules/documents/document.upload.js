@@ -102,6 +102,7 @@ const imgStorage = multer.diskStorage({
 });
 
 const ALLOWED_DOC_EXTENSIONS = ['.pdf'];
+const ALLOWED_DOW_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx'];
 const ALLOWED_IMG_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
 
 const maxDocBytes = config.storage.maxDocSizeMB * 1024 * 1024;
@@ -110,13 +111,42 @@ const maxImgBytes = config.storage.maxImgSizeMB * 1024 * 1024;
 /**
  * multer instance สำหรับอัปโหลดเอกสาร (1 ไฟล์ ครั้งละครั้ง)
  * สร้าง multer ใหม่ทุกครั้งที่เรียก เพื่อใช้ fileLimits ปัจจุบัน
+ * ถ้าเอกสารเป็นประเภท DOW จะรองรับ PDF + Word + Excel ด้วย
  */
 function uploadDoc(req, res, cb) {
   const instance = multer({
     storage: docStorage,
     limits: { fileSize: fileLimits.docMB * 1024 * 1024, files: 1 },
-    fileFilter: (req, file, next) => {
+    fileFilter: async (req, file, next) => {
       const ext = path.extname(file.originalname).toLowerCase();
+      try {
+        // ตรวจว่าเอกสารนี้เป็นประเภท DOW หรือไม่ (lookup จาก :id)
+        if (req.params.id) {
+          const Document = require('../../models/Document');
+          const DocType = require('../../models/DocType');
+          const doc = await Document.findById(req.params.id).select('type_id').lean();
+          if (doc) {
+            const docType = await DocType.findById(doc.type_id).select('code').lean();
+            if (docType?.code?.toUpperCase() === 'DOW') {
+              if (
+                config.storage.allowedDowMimes.includes(file.mimetype) &&
+                ALLOWED_DOW_EXTENSIONS.includes(ext)
+              ) {
+                return next(null, true);
+              }
+              return next(
+                new multer.MulterError(
+                  'LIMIT_UNEXPECTED_FILE',
+                  'ชนิดไฟล์ไม่รองรับ สำหรับ DOW รองรับ PDF, Word (.doc/.docx), Excel (.xls/.xlsx) เท่านั้น'
+                )
+              );
+            }
+          }
+        }
+      } catch (_e) {
+        // ถ้า lookup ไม่สำเร็จ fallback ไป PDF-only
+      }
+      // Default: PDF เท่านั้น
       if (
         config.storage.allowedDocMimes.includes(file.mimetype) &&
         ALLOWED_DOC_EXTENSIONS.includes(ext)
