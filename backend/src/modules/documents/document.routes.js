@@ -21,6 +21,9 @@ const {
   permanentDeleteAttachment,
   uploadImage,
   viewImage,
+  createShare,
+  deleteShare,
+  getShare,
 } = require('./document.controller');
 const { validateCreate, validateUpdate, validateUploadAtt } = require('./document.validation');
 const config = require('../../config');
@@ -108,5 +111,16 @@ router.post(
 
 // ดูรูปภาพ
 router.get('/:id/images/:index', authenticate, viewImage);
+
+// ─── DOW Share ────────────────────────────────────────────────────────────────
+
+// ดึงข้อมูล share link + QR (owner/admin)
+router.get('/:id/share', authenticate, requireRole('member'), getShare);
+
+// สร้าง/อัปเดต share link
+router.post('/:id/share', authenticate, requireRole('member'), createShare);
+
+// ลบ share link
+router.delete('/:id/share', authenticate, requireRole('member'), deleteShare);
 
 module.exports = router;

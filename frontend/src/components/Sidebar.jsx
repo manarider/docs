@@ -63,7 +63,7 @@ export default function Sidebar({ open, onClose }) {
         <p className="text-xs text-gray-400 text-center leading-relaxed">
           © 2026 งานจัดทำและพัฒนาระบบข้อมูลสารสนเทศ<br />
           กลุ่มงานสถิติข้อมูลและสารสนเทศ<br />
-          เทศบาลนครนครสวรรค์
+          เทศบาลนครนครสวรรค์ by manarider
         </p>
       </div>
     </>

@@ -6,11 +6,13 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Auto redirect ไป login เมื่อ 401
+// Auto redirect ไป login เมื่อ 401 (ยกเว้น public download path)
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401 && !window.location.pathname.endsWith('/login')) {
+    const path = window.location.pathname;
+    const isPublic = path.includes('/download/');
+    if (err.response?.status === 401 && !path.endsWith('/login') && !isPublic) {
       window.location.replace('/docs/login');
     }
     return Promise.reject(err);

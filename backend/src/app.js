@@ -18,6 +18,7 @@ const { sendError } = require('./utils/response');
 // Routes
 const authRoutes = require('./modules/auth/auth.routes');
 const documentRoutes = require('./modules/documents/document.routes');
+const shareRoutes = require('./modules/documents/share.routes');
 const departmentRoutes = require('./modules/departments/department.routes');
 const docTypeRoutes = require('./modules/doctypes/doctype.routes');
 const reportRoutes = require('./modules/reports/report.routes');
@@ -99,6 +100,7 @@ if (config.env !== 'test') {
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/share', shareRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/doctypes', docTypeRoutes);
 app.use('/api/reports', reportRoutes);

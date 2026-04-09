@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const QRCode = require('qrcode');
 const { v4: uuidv4 } = require('uuid');
 const config = require('../../config');
 const Document = require('../../models/Document');
@@ -883,6 +884,158 @@ async function permanentDeleteAttachment(req, res) {
   }
 }
 
+/**
+ * สร้าง share URL + QR Code สำหรับ DOW document
+ */
+async function buildShareInfo(doc, token) {
+  const baseUrl = config.app?.publicUrl || 'https://app.nsm.go.th';
+  const shareUrl = `${baseUrl}/docs/download/${token}`;
+  const qrCode = await QRCode.toDataURL(shareUrl, { errorCorrectionLevel: 'M', margin: 2 });
+  return {
+    token,
+    starts_at: doc.download_share.starts_at,
+    expires_at: doc.download_share.expires_at,
+    share_url: shareUrl,
+    qr_code: qrCode,
+  };
+}
+
+/**
+ * POST /api/documents/:id/share
+ * สร้าง/อัปเดต share link สำหรับเอกสาร DOW
+ * Body: { starts_at, expires_at } (ISO string)
+ */
+async function createShare(req, res) {
+  try {
+    const doc = await Document.findOne({ _id: req.params.id, deleted_at: null })
+      .populate('type_id', 'code')
+      .lean(false);
+    if (!doc) return sendError(res, 404, 'ไม่พบเอกสาร');
+
+    // ตรวจว่าเป็น DOW
+    if (doc.type_id?.code?.toUpperCase() !== 'DOW') {
+      return sendError(res, 400, 'เฉพาะเอกสารประเภท DOW เท่านั้นที่สามารถแชร์ได้');
+    }
+
+    // ตรวจสิทธิ์: owner หรือ admin+
+    const userRole = req.user.role;
+    if (!['superadmin', 'admin'].includes(userRole) && String(doc.created_by) !== req.user.userId) {
+      return sendError(res, 403, 'คุณไม่มีสิทธิ์แชร์เอกสารนี้');
+    }
+
+    const { starts_at, expires_at } = req.body;
+    if (!starts_at || !expires_at) return sendError(res, 400, 'กรุณาระบุวันเวลาเริ่มและสิ้นสุด');
+
+    const startsDate = new Date(starts_at);
+    const expiresDate = new Date(expires_at);
+    if (isNaN(startsDate.getTime()) || isNaN(expiresDate.getTime())) {
+      return sendError(res, 400, 'รูปแบบวันเวลาไม่ถูกต้อง');
+    }
+    if (expiresDate <= startsDate) {
+      return sendError(res, 400, 'วันสิ้นสุดต้องมากกว่าวันเริ่มต้น');
+    }
+
+    // ตรวจ attachment (ต้องมีไฟล์แนบอย่างน้อย 1 รายการ)
+    const activeAtts = (doc.attachments || []).filter((a) => !a.deleted_at);
+    if (activeAtts.length === 0) {
+      return sendError(res, 400, 'เอกสารต้องมีไฟล์แนบอย่างน้อย 1 รายการก่อนแชร์');
+    }
+
+    // สร้าง token ใหม่ทุกครั้งที่แชร์
+    const token = crypto.randomBytes(32).toString('hex');
+    doc.download_share = { token, starts_at: startsDate, expires_at: expiresDate };
+    await doc.save();
+
+    await logAction({
+      userId: req.user.userId,
+      username: req.user.username,
+      action: 'SHARE',
+      module: 'DOCUMENT',
+      resourceId: doc._id,
+      ipAddress: getIp(req),
+      userAgent: req.headers['user-agent'],
+      details: { starts_at: startsDate, expires_at: expiresDate },
+    });
+
+    const shareInfo = await buildShareInfo(doc, token);
+    return sendSuccess(res, shareInfo, 'สร้างลิงก์แชร์เรียบร้อย');
+  } catch (err) {
+    logger.error('[Document] createShare error:', err.message);
+    return sendError(res, 500, 'เกิดข้อผิดพลาด');
+  }
+}
+
+/**
+ * DELETE /api/documents/:id/share
+ * ลบ share link ออกจากเอกสาร DOW
+ */
+async function deleteShare(req, res) {
+  try {
+    const doc = await Document.findOne({ _id: req.params.id, deleted_at: null });
+    if (!doc) return sendError(res, 404, 'ไม่พบเอกสาร');
+
+    const userRole = req.user.role;
+    if (!['superadmin', 'admin'].includes(userRole) && String(doc.created_by) !== req.user.userId) {
+      return sendError(res, 403, 'คุณไม่มีสิทธิ์ลบลิงก์แชร์');
+    }
+
+    doc.download_share = { token: null, starts_at: null, expires_at: null };
+    await doc.save();
+
+    await logAction({
+      userId: req.user.userId,
+      username: req.user.username,
+      action: 'UNSHARE',
+      module: 'DOCUMENT',
+      resourceId: doc._id,
+      ipAddress: getIp(req),
+      userAgent: req.headers['user-agent'],
+    });
+
+    return sendSuccess(res, null, 'ลบลิงก์แชร์เรียบร้อย');
+  } catch (err) {
+    logger.error('[Document] deleteShare error:', err.message);
+    return sendError(res, 500, 'เกิดข้อผิดพลาด');
+  }
+}
+
+/**
+ * GET /api/documents/:id/share
+ * คืนข้อมูล share (token, QR, times) สำหรับ owner/admin
+ */
+async function getShare(req, res) {
+  try {
+    const doc = await Document.findOne({ _id: req.params.id, deleted_at: null })
+      .populate('type_id', 'code')
+      .lean();
+    if (!doc) return sendError(res, 404, 'ไม่พบเอกสาร');
+
+    const userRole = req.user.role;
+    if (!['superadmin', 'admin'].includes(userRole) && String(doc.created_by) !== req.user.userId) {
+      return sendError(res, 403, 'คุณไม่มีสิทธิ์');
+    }
+
+    if (!doc.download_share?.token) {
+      return sendSuccess(res, null, 'ยังไม่มีลิงก์แชร์');
+    }
+
+    const now = new Date();
+    // ถ้าหมดเวลาแล้ว ให้ auto-clear
+    if (doc.download_share.expires_at && new Date(doc.download_share.expires_at) <= now) {
+      await Document.updateOne({ _id: doc._id }, {
+        $set: { 'download_share.token': null, 'download_share.starts_at': null, 'download_share.expires_at': null },
+      });
+      return sendSuccess(res, null, 'ลิงก์แชร์หมดอายุแล้ว');
+    }
+
+    const shareInfo = await buildShareInfo(doc, doc.download_share.token);
+    return sendSuccess(res, shareInfo, 'ข้อมูลลิงก์แชร์');
+  } catch (err) {
+    logger.error('[Document] getShare error:', err.message);
+    return sendError(res, 500, 'เกิดข้อผิดพลาด');
+  }
+}
+
 module.exports = {
   listDocuments,
   globalSearch,
@@ -902,4 +1055,7 @@ module.exports = {
   permanentDeleteAttachment,
   uploadImage,
   viewImage,
+  createShare,
+  deleteShare,
+  getShare,
 };

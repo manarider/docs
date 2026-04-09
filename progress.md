@@ -269,6 +269,24 @@ await Document.updateOne(
 - ✅ เพิ่ม StorageSection (admin only) — จำนวนไฟล์, ขนาดที่ใช้, พื้นที่คงเหลือ, disk usage bar, แยกตามนามสกุล
 - ✅ `GET /api/reports/storage` — storage stats จาก filesystem + `df`
 
+### Phase 16 (DOW Download Share — 9 เม.ย. 2569)
+
+**ฟีเจอร์ใหม่: เอกสารประเภท DOW (Download)**
+- ✅ `Document` model — เพิ่ม field `download_share { token, starts_at, expires_at }`
+- ✅ `buildStoragePath` — ประเภท `DOW` เก็บไฟล์แยกที่ `/data/archives/documents/download/` (permission 750)
+- ✅ Backend `createShare` / `getShare` / `deleteShare` — สร้าง/ดู/ลบ share link + QR Code (qrcode npm)
+- ✅ `share.controller.js` + `share.routes.js` — public endpoints `/api/share/:token` ไม่ต้อง login
+  - Token = `crypto.randomBytes(32)` (64 hex), ตรวจ `starts_at` / `expires_at` ทุก request
+  - Auto-clear token ใน DB เมื่อหมดอายุ
+  - Rate limit 60 req/15 นาที ป้องกัน abuse
+  - Header `Cache-Control: no-store` สำหรับไฟล์ที่ส่งผ่าน token
+- ✅ `PublicDownload.jsx` — หน้า public `/docs/download/:token` (ไม่ต้อง login)
+- ✅ `App.jsx` — ย้าย public route ออกนอก `AuthProvider` (แก้ bug redirect loop)
+- ✅ `api.js` — interceptor ข้ามการ redirect เมื่อ path มี `/download/`
+- ✅ `DocumentEdit.jsx` — เพิ่ม section แชร์: modal ตั้งวันเวลา, แสดง URL + QR Code, ปุ่มดาวน์โหลด QR
+- ✅ `DocumentDetail.jsx` — แสดง share info panel (URL + QR + วันหมดอายุ) สำหรับ DOW
+- ✅ `.gitignore` — เพิ่ม `documents/` ไม่ track ไฟล์ user data
+
 ---
 
 ## 6. สิ่งที่ควรทำเพิ่มเติม (Backlog)

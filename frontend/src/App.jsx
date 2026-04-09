@@ -16,6 +16,7 @@ import AdminDocTypes from './pages/AdminDocTypes';
 import AdminAuditLog from './pages/AdminAuditLog';
 import AdminTrash from './pages/AdminTrash';
 import AdminSettings from './pages/AdminSettings';
+import PublicDownload from './pages/PublicDownload';
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -31,34 +32,37 @@ function AppRoutes() {
     );
   }
 
-  if (!user) {
-    return (
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/auth-callback" element={<AuthCallbackPage />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
-    );
-  }
-
   return (
     <Routes>
-      <Route path="/auth-callback" element={<AuthCallbackPage />} />
-      <Route path="/" element={<Layout />}>
-        <Route index element={<Home />} />
-        <Route path="documents" element={<Documents />} />
-        <Route path="documents/new" element={<DocumentNew />} />
-        <Route path="documents/:id" element={<DocumentDetail />} />
-        <Route path="documents/:id/edit" element={<DocumentEdit />} />
-        <Route path="search" element={<Search />} />
-        <Route path="reports" element={<Reports />} />
-        <Route path="admin/departments" element={<AdminDepartments />} />
-        <Route path="admin/doctypes" element={<AdminDocTypes />} />
-        <Route path="admin/audit" element={<AdminAuditLog />} />
-        <Route path="admin/trash" element={<AdminTrash />} />
-        <Route path="admin/settings" element={<AdminSettings />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Route>
+      {/* Public — ไม่ต้อง login */}
+      <Route path="/download/:token" element={<PublicDownload />} />
+
+      {!user ? (
+        <>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/auth-callback" element={<AuthCallbackPage />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </>
+      ) : (
+        <>
+          <Route path="/auth-callback" element={<AuthCallbackPage />} />
+          <Route path="/" element={<Layout />}>
+            <Route index element={<Home />} />
+            <Route path="documents" element={<Documents />} />
+            <Route path="documents/new" element={<DocumentNew />} />
+            <Route path="documents/:id" element={<DocumentDetail />} />
+            <Route path="documents/:id/edit" element={<DocumentEdit />} />
+            <Route path="search" element={<Search />} />
+            <Route path="reports" element={<Reports />} />
+            <Route path="admin/departments" element={<AdminDepartments />} />
+            <Route path="admin/doctypes" element={<AdminDocTypes />} />
+            <Route path="admin/audit" element={<AdminAuditLog />} />
+            <Route path="admin/trash" element={<AdminTrash />} />
+            <Route path="admin/settings" element={<AdminSettings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </>
+      )}
     </Routes>
   );
 }
@@ -66,10 +70,20 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter basename="/docs">
-      <AuthProvider>
-        <Toaster position="top-right" />
-        <AppRoutes />
-      </AuthProvider>
+      <Routes>
+        {/* Public route — ไม่ต้องผ่าน AuthProvider เลย */}
+        <Route path="/download/:token" element={<PublicDownload />} />
+        {/* ทุก route อื่น → ผ่าน Auth */}
+        <Route
+          path="*"
+          element={
+            <AuthProvider>
+              <Toaster position="top-right" />
+              <AppRoutes />
+            </AuthProvider>
+          }
+        />
+      </Routes>
     </BrowserRouter>
   );
 }

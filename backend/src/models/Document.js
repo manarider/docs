@@ -58,6 +58,12 @@ const documentSchema = new mongoose.Schema(
     starred_by: [{ type: mongoose.Schema.Types.ObjectId }], // userId ที่ติดดาว
     deleted_at: { type: Date, default: null },
     deleted_by: { type: mongoose.Schema.Types.ObjectId, default: null },
+    // สำหรับเอกสารประเภท DOW — ข้อมูลการแชร์ลิงก์/QR Code
+    download_share: {
+      token: { type: String, default: null },        // random hex token 64 char
+      starts_at: { type: Date, default: null },       // เวลาเริ่มเข้าถึง
+      expires_at: { type: Date, default: null },      // เวลาสิ้นสุดเข้าถึง
+    },
   },
   { timestamps: true }
 );

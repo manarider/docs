@@ -43,6 +43,7 @@ const config = {
 
   storage: {
     basePath: process.env.DOC_STORAGE_PATH || '/data/archives/uploads',
+    downloadPath: process.env.DOC_DOWNLOAD_PATH || '/data/archives/documents/download',
     maxDocSizeMB: parseInt(process.env.MAX_DOC_SIZE_MB, 10) || 50,
     maxImgSizeMB: parseInt(process.env.MAX_IMG_SIZE_MB, 10) || 3,
     maxImagesPerDoc: parseInt(process.env.MAX_IMAGES_PER_DOC, 10) || 4,

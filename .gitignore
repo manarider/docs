@@ -25,6 +25,7 @@ logs/
 # ─── Uploaded Files (user data — ไม่ควรอยู่ใน git) ──────────────────────────
 uploads/
 backend/uploads/
+documents/
 
 # ─── Test / Scratch files ────────────────────────────────────────────────────
 integration-test.js

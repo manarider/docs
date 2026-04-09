@@ -16,13 +16,32 @@ export default function DocumentDetail() {
   const [viewLoading, setViewLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [shareInfo, setShareInfo] = useState(null); // DOW share info
 
   useEffect(() => {
     api.get(`/documents/${id}`)
-      .then(({ data }) => setDoc(data.data))
+      .then(({ data }) => {
+        const d = data.data;
+        setDoc(d);
+        if (d.type_id?.code?.toUpperCase() === 'DOW') {
+          return api.get(`/documents/${id}/share`)
+            .then(({ data: sd }) => setShareInfo(sd.data))
+            .catch(() => {});
+        }
+      })
       .catch(() => toast.error('โหลดเอกสารไม่สำเร็จ'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  const downloadQrCode = () => {
+    if (!shareInfo?.qr_code) return;
+    const a = document.createElement('a');
+    a.href = shareInfo.qr_code;
+    a.download = 'qrcode-download.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 
   const handleDownload = async (subId, name) => {
     try {
@@ -143,6 +162,47 @@ export default function DocumentDetail() {
           </div>
         </div>
       </div>
+
+      {/* DOW Share Info Panel */}
+      {doc.type_id?.code?.toUpperCase() === 'DOW' && shareInfo && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 space-y-3">
+          <p className="font-semibold text-blue-800 text-sm">📤 ลิงก์แชร์ดาวน์โหลด</p>
+          <div className="text-xs text-blue-700 space-y-0.5">
+            <p>เริ่ม: {new Date(shareInfo.starts_at).toLocaleString('th-TH', { dateStyle: 'long', timeStyle: 'short' })}</p>
+            <p>สิ้นสุด: {new Date(shareInfo.expires_at).toLocaleString('th-TH', { dateStyle: 'long', timeStyle: 'short' })}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              readOnly
+              value={shareInfo.share_url}
+              className="flex-1 text-xs bg-white border border-blue-200 rounded-lg px-3 py-1.5 text-gray-600 truncate"
+            />
+            <button
+              onClick={() => { navigator.clipboard.writeText(shareInfo.share_url); toast.success('คัดลอกลิงก์แล้ว'); }}
+              className="text-xs border border-blue-300 text-blue-600 px-2 py-1.5 rounded-lg hover:bg-blue-100 whitespace-nowrap"
+            >คัดลอก</button>
+          </div>
+          {shareInfo.qr_code && (
+            <div className="flex items-start gap-4">
+              <img src={shareInfo.qr_code} alt="QR Code" className="w-28 h-28 border border-blue-200 rounded-lg bg-white p-1" />
+              <div className="space-y-2 pt-1">
+                <p className="text-xs text-blue-700">สแกน QR Code เพื่อดาวน์โหลด</p>
+                <button
+                  onClick={downloadQrCode}
+                  className="flex items-center gap-1 text-xs bg-white border border-blue-300 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  ดาวน์โหลด QR
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Attachments */}
       {doc.attachments?.length > 0 && (

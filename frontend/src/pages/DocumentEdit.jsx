@@ -31,6 +31,14 @@ export default function DocumentEdit() {
   const [deletingSubId, setDeletingSubId] = useState(null); // sub_id กำลังลบ
   const blockNavRef = useRef(false);
 
+  // DOW share state
+  const [isDownloadType, setIsDownloadType] = useState(false);
+  const [shareInfo, setShareInfo] = useState(null); // { token, qr_code, share_url, starts_at, expires_at }
+  const [shareModal, setShareModal] = useState(false);
+  const [shareForm, setShareForm] = useState({ starts_at: '', expires_at: '' });
+  const [sharingLoading, setSharingLoading] = useState(false);
+  const [deletingShare, setDeletingShare] = useState(false);
+
   useEffect(() => {
     Promise.all([
       api.get(`/documents/${id}`),
@@ -47,6 +55,13 @@ export default function DocumentEdit() {
         });
         setAttachments(doc.attachments || []);
         setPublicDurationHours(ps.data?.public_duration_hours ?? 24);
+        const isDow = doc.type_id?.code?.toUpperCase() === 'DOW';
+        setIsDownloadType(isDow);
+        if (isDow) {
+          return api.get(`/documents/${id}/share`)
+            .then(({ data: sd }) => setShareInfo(sd.data))
+            .catch(() => {});
+        }
       })
       .catch(() => toast.error('โหลดเอกสารไม่สำเร็จ'))
       .finally(() => setLoading(false));
@@ -59,6 +74,53 @@ export default function DocumentEdit() {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, []);
+
+  const handleCreateShare = async () => {
+    if (!shareForm.starts_at || !shareForm.expires_at) {
+      return toast.error('กรุณาระบุวันเวลาเริ่มและสิ้นสุด');
+    }
+    if (new Date(shareForm.expires_at) <= new Date(shareForm.starts_at)) {
+      return toast.error('วันสิ้นสุดต้องมากกว่าวันเริ่มต้น');
+    }
+    setSharingLoading(true);
+    try {
+      const { data } = await api.post(`/documents/${id}/share`, {
+        starts_at: new Date(shareForm.starts_at).toISOString(),
+        expires_at: new Date(shareForm.expires_at).toISOString(),
+      });
+      setShareInfo(data.data);
+      setShareModal(false);
+      toast.success('สร้างลิงก์แชร์เรียบร้อย');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'เกิดข้อผิดพลาด');
+    } finally {
+      setSharingLoading(false);
+    }
+  };
+
+  const handleDeleteShare = async () => {
+    if (!window.confirm('ยืนยันการยกเลิกการแชร์? ลิงก์และ QR Code จะไม่สามารถใช้งานได้ทันที')) return;
+    setDeletingShare(true);
+    try {
+      await api.delete(`/documents/${id}/share`);
+      setShareInfo(null);
+      toast.success('ยกเลิกการแชร์เรียบร้อย');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'เกิดข้อผิดพลาด');
+    } finally {
+      setDeletingShare(false);
+    }
+  };
+
+  const downloadQrCode = () => {
+    if (!shareInfo?.qr_code) return;
+    const a = document.createElement('a');
+    a.href = shareInfo.qr_code;
+    a.download = 'qrcode-download.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 
   const setFileField = (idx, field, val) =>
     setNewFiles((prev) => prev.map((f, i) => (i === idx ? { ...f, [field]: val } : f)));
@@ -184,6 +246,92 @@ export default function DocumentEdit() {
             placeholder="เช่น: งบประมาณ, ปี2567, สัญญา"
           />
         </div>
+
+        {/* ─── DOW Share Section ─────────────────────────────── */}
+        {isDownloadType && (
+          <div className="border border-blue-200 rounded-xl p-4 bg-blue-50 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-blue-800">📤 แชร์เอกสารดาวน์โหลด (DOW)</p>
+              {!shareInfo ? (
+                <button
+                  type="button"
+                  onClick={() => setShareModal(true)}
+                  className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                  </svg>
+                  แชร์
+                </button>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShareModal(true)}
+                    className="text-xs border border-blue-400 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition"
+                  >ตั้งเวลาใหม่</button>
+                  <button
+                    type="button"
+                    onClick={handleDeleteShare}
+                    disabled={deletingShare}
+                    className="text-xs border border-red-400 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition disabled:opacity-60"
+                  >{deletingShare ? 'กำลังยกเลิก...' : 'ยกเลิกแชร์'}</button>
+                </div>
+              )}
+            </div>
+
+            {shareInfo && (
+              <div className="space-y-3">
+                {/* เวลา */}
+                <div className="text-xs text-blue-700 space-y-0.5">
+                  <p>เริ่ม: {new Date(shareInfo.starts_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</p>
+                  <p>สิ้นสุด: {new Date(shareInfo.expires_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</p>
+                </div>
+
+                {/* URL */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={shareInfo.share_url}
+                    className="flex-1 text-xs bg-white border border-blue-200 rounded-lg px-3 py-1.5 text-gray-600 truncate"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => { navigator.clipboard.writeText(shareInfo.share_url); toast.success('คัดลอกลิงก์แล้ว'); }}
+                    className="text-xs border border-blue-300 text-blue-600 px-2 py-1.5 rounded-lg hover:bg-blue-100 whitespace-nowrap"
+                  >คัดลอก</button>
+                </div>
+
+                {/* QR Code */}
+                {shareInfo.qr_code && (
+                  <div className="flex items-start gap-4">
+                    <img src={shareInfo.qr_code} alt="QR Code" className="w-28 h-28 border border-blue-200 rounded-lg bg-white p-1" />
+                    <div className="space-y-2 pt-1">
+                      <p className="text-xs text-blue-700">สแกน QR Code เพื่อดาวน์โหลด</p>
+                      <button
+                        type="button"
+                        onClick={downloadQrCode}
+                        className="flex items-center gap-1 text-xs bg-white border border-blue-300 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        ดาวน์โหลด QR
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!shareInfo && (
+              <p className="text-xs text-blue-600">กดปุ่ม "แชร์" เพื่อสร้างลิงก์และ QR Code สำหรับดาวน์โหลด</p>
+            )}
+          </div>
+        )}
 
         {/* เปิดให้บุคคลทั่วไปเห็น */}
         {(() => {
@@ -346,6 +494,50 @@ export default function DocumentEdit() {
           </button>
         </div>
       </form>
+
+      {/* Share Modal */}
+      {shareModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
+            <h3 className="font-bold text-gray-800 text-lg">ตั้งเวลาการแชร์</h3>
+            <p className="text-xs text-gray-500">กำหนดช่วงเวลาที่ผู้รับลิงก์สามารถดาวน์โหลดเอกสารได้</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">วันเวลาเริ่มต้น</label>
+                <input
+                  type="datetime-local"
+                  value={shareForm.starts_at}
+                  onChange={(e) => setShareForm((f) => ({ ...f, starts_at: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">วันเวลาสิ้นสุด</label>
+                <input
+                  type="datetime-local"
+                  value={shareForm.expires_at}
+                  onChange={(e) => setShareForm((f) => ({ ...f, expires_at: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => setShareModal(false)}
+                disabled={sharingLoading}
+                className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50"
+              >ยกเลิก</button>
+              <button
+                type="button"
+                onClick={handleCreateShare}
+                disabled={sharingLoading}
+                className="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
+              >{sharingLoading ? 'กำลังสร้าง...' : 'ยืนยัน'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Upload Progress Modal */}
       {uploadProgress && (

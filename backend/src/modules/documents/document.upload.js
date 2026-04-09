@@ -44,7 +44,8 @@ async function initFileSizeLimitsFromDb() {
 
 /**
  * สร้างโฟลเดอร์เก็บไฟล์:
- * {basePath}/{deptCode}/{fiscalYear(พ.ศ.)}/{docTypeCode}/
+ * - ประเภท DOW → {downloadPath}/{deptCode}/{fiscalYear}/
+ * - ประเภทอื่น  → {basePath}/{deptCode}/{fiscalYear}/{docTypeCode}/
  */
 async function buildStoragePath(deptId, typeId) {
   const [dept, docType] = await Promise.all([
@@ -56,6 +57,14 @@ async function buildStoragePath(deptId, typeId) {
   const deptCode = dept.code.toLowerCase();
   const typeCode = docType.code.toLowerCase();
   const fiscalYear = getFiscalYear();
+
+  // ประเภท DOW → เก็บในโฟลเดอร์ download แยกต่างหาก (ไม่ให้ผู้อื่น access โดยตรง)
+  if (docType.code.toUpperCase() === 'DOW') {
+    const dirPath = path.join(config.storage.downloadPath, deptCode, String(fiscalYear));
+    fs.mkdirSync(dirPath, { recursive: true });
+    return { dirPath, deptCode, typeCode, fiscalYear };
+  }
+
   const dirPath = path.join(config.storage.basePath, deptCode, String(fiscalYear), typeCode);
   fs.mkdirSync(dirPath, { recursive: true });
   return { dirPath, deptCode, typeCode, fiscalYear };
