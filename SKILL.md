@@ -1,48 +1,45 @@
-# Developer Skill Guide (SKILL.md)
+# คู่มือนักพัฒนาและการแก้ไขระบบ (SKILL.md)
 
-This file contains guides on how to implement new features and perform common maintenance tasks in this codebase.
+เอกสารนี้รวบรวมวิธีดำเนินการสำหรับการเพิ่มคุณสมบัติใหม่ๆ และการบำรุงรักษาระบบเบื้องต้นในสถาปัตยกรรมของโครงการนี้
 
-## 1. Adding a New Database Field to the Project
-To add a new project field (e.g., contract manager name) and make it available in the template designer:
+## 1. ขั้นตอนการเพิ่มฟิลด์ข้อมูลโปรเจกต์ใหม่ (Adding Project Field)
+หากต้องการเพิ่มข้อมูลใหม่ของโครงการ (เช่น ชื่อผู้จัดการสัญญา) และทำให้แสดงเป็นตัวเลือกในการวาดลงแบบฟอร์ม PDF:
 
-1.  **Update Schema:**
-    *   Open `/backend/src/models/Project.js`.
-    *   Add the new field to the schema object (e.g., `contract_manager: { type: String, default: '', trim: true }`).
-2.  **Update Controller Mapping:**
-    *   Open `/backend/src/modules/projects/project.controller.js`.
-    *   Find `updateProject` method.
-    *   Destructure the new field from `req.body` and add it to `updateData` validation block.
-3.  **Extend PDF Context Resolver:**
-    *   Open `/backend/src/utils/pdfGenerator.js`.
-    *   Find `getFieldValue` function.
-    *   Add your mapping resolver:
+1.  **แก้ไขฐานข้อมูล (Schema):**
+    *   เปิดไฟล์สกีมาโครงการที่ [Project.js](file:///data/archives/backend/src/models/Project.js)
+    *   เพิ่มฟิลด์ตัวแปรใหม่เข้าไป (เช่น `contract_manager: { type: String, default: '', trim: true }`)
+2.  **เปิดการรับค่าและบันทึกข้อมูล (Controller):**
+    *   เปิดไฟล์ควบคุมที่ [project.controller.js](file:///data/archives/backend/src/modules/projects/project.controller.js)
+    *   ในส่วนฟังก์ชัน `updateProject` ให้ทำตัวรับค่าจาก `req.body` และนำมาบันทึกอัปเดตลงโมเดล
+3.  **เพิ่มฟิลด์ลงในตัวแมป PDF (PDF Context Resolver):**
+    *   เปิดไฟล์สร้างเอกสารที่ [pdfGenerator.js](file:///data/archives/backend/src/utils/pdfGenerator.js)
+    *   ไปที่ฟังก์ชัน `getFieldValue` และทำการเพิ่มเงื่อนไขแมปรหัสคำสำคัญ:
         ```javascript
         if (key === 'contractManager') return record.project?.contract_manager || '';
         ```
-4.  **Register Field in Palette:**
-    *   Open `/frontend/src/pages/TemplateDesigner.jsx`.
-    *   Find the `PROJECT_FIELDS` catalog array.
-    *   Append your new option:
+4.  **เพิ่มตัวเลือกบนหน้าจอออกแบบ (Palette Catalog):**
+    *   เปิดไฟล์หน้าบ้านที่ [TemplateDesigner.jsx](file:///data/archives/frontend/src/pages/TemplateDesigner.jsx)
+    *   ค้นหาตัวแปรอาร์เรย์รายการฟิลด์ `PROJECT_FIELDS` จากนั้นแนบตัวเลือกใหม่ต่อท้าย:
         ```javascript
         { id: '_project.contractManager', label: 'ผู้จัดการสัญญา' },
         ```
 
 ---
 
-## 2. Resolving Custom Module Fields in PDF
-To add new values from custom modules (e.g. daily reports detail fields):
+## 2. ขั้นตอนการแมปฟิลด์ของโมดูลย่อย (Resolving Custom Module Fields)
+กรณีมีฟิลด์หรือเนื้อหาในเอกสารย่อย (เช่น รายละเอียดบันทึกสภาพอากาศ หรือปัญหาอุปสรรค):
 
-1.  **Retrieve values:** Make sure the field exists in the Mongoose Model.
-2.  **Map in getFieldValue:** Open `pdfGenerator.js` and map the new field to a specific string key (e.g., `report.weather` maps to `record.weather`).
-3.  **Catalog Registration:** Add the exact string key and clear label name to `FIELD_CATALOG` in `TemplateDesigner.jsx` so it appears in the dropdown list.
+1.  **การดึงข้อมูล:** ตรวจสอบว่าโมเดลฟิลด์นั้นบันทึกลงในคอลเลกชันรายงานจริง
+2.  **เขียนตัวจัดการแก้ค่า:** ไปที่ `pdfGenerator.js` เพื่อเขียนแมปแปลงคำสำคัญ เช่น `report.weather` ให้ออกมาเป็น `record.weather || ''`
+3.  **เพิ่มเข้าดีไซเนอร์หน้าบ้าน:** นำคีย์คำสำคัญและป้ายชื่อภาษาไทยระบุเพิ่มในชุดตัวแปรของ `TemplateDesigner.jsx` เพื่อดึงขึ้นมาแสดงในรายการ Dropdown ให้เจ้าหน้าที่เลือกใช้งาน
 
 ---
 
-## 3. Maintenance: Overwriting/Reinstalling Fonts
-If the Thai font file is corrupted or throws "Unknown font format":
-1.  Verify the file size and metadata using `file backend/src/assets/fonts/THSarabunNew.ttf`.
-2.  Download a binary `.ttf` file using:
+## 3. การบำรุงรักษา: การแก้ไข/ทดแทนไฟล์ฟอนต์ชำรุด
+หากฟอนต์ไทยไม่สามารถอ่านออก หรือเบราว์เซอร์ฟ้องสระลอยและ `Unknown font format`:
+1.  ตรวจสอบความสมบูรณ์และขนาดของไฟล์ฟอนต์ผ่านคำสั่งตรวจสอบประเภทไฟล์ `file backend/src/assets/fonts/THSarabunNew.ttf`
+2.  สามารถดาวน์โหลดฟอนต์ TrueType ต้นฉบับผ่านคอมมานด์ไลน์ด้วยคำสั่งนี้:
     ```bash
     curl -L -o backend/src/assets/fonts/THSarabunNew.ttf https://github.com/Phonbopit/sarabun-webfont/raw/master/fonts/thsarabunnew-webfont.ttf
     ```
-3.  Restart backend processes with `pm2 reload docs-api`.
+3.  หลังจากทดแทนไฟล์สำเร็จ ให้ทำการรีสตาร์ทบริการหลังบ้านเพื่อโหลดฟอนต์ใหม่ด้วยคำสั่ง: `pm2 reload docs-api`

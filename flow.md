@@ -1,43 +1,44 @@
-# System Workflows (flow.md)
+# โฟลว์และขั้นตอนการทำงานของระบบ (flow.md)
 
-This document describes the key runtime flows of the Project Tracking System.
+เอกสารนี้อธิบายเกี่ยวกับขั้นตอนการทำงาน (Workflows) ที่สำคัญภายในระบบติดตามโครงการ
 
-## 1. User Management System (UMS) OAuth Login Flow
-1.  **Request Login:** The user navigates to `/docs/api/auth/login`.
-2.  **Redirect to UMS:** Express API redirects to `https://nssv.nsm.go.th/ums/login?redirect=https://app.nsm.go.th/docs/auth-callback`.
-3.  **Authentication:** User enters credentials on UMS and is redirected back with a token parameter: `/docs/auth-callback?token={jwt}`.
-4.  **Token Verification:** React router captures the token and requests the backend: `/api/auth/callback?token={jwt}`.
-5.  **Fetch Profile:** Backend performs a server-to-server request to UMS endpoint `/api/auth/me` with header `Authorization: Bearer {jwt}`.
-6.  **Create Session:** UMS returns profile and project permissions. Backend stores profile in `req.session.user` and redirects to the frontend homepage.
-
----
-
-## 2. Project Key Auth Flow (External Contractors)
-1.  **Login Entry:** Contractor opens `/docs/projects/:projectId/login`.
-2.  **Verify Public Info:** Client fetches public project title and metadata from `/api/project-auth/project/:projectId/info`.
-3.  **Submit Key:** Contractor enters key and submits to `/api/project-auth/login`.
-4.  **Hash Verification:** Backend performs a SHA-256 hash of the submitted key and queries the database `ProjectKey` collection.
-5.  **Enforce Limits:** Checks `expires_at > Date.now()` and `is_active === true`.
-6.  **Establish Project Session:** Stores key metadata in `req.session.project_user` with cookie maxAge matching the key expiration.
+## 1. โฟลว์การ Login ผ่านระบบจัดการผู้ใช้กลาง (UMS OAuth)
+1.  **เข้าสู่ระบบ:** ผู้ใช้งานกดเข้าสู่ระบบผ่านพาธ `/docs/api/auth/login`
+2.  **การเปลี่ยนเส้นทาง (Redirect):** Express API จะส่งตัวชี้การนำทางไปยังหน้าเข้าสู่ระบบ UMS:
+    `https://nssv.nsm.go.th/ums/login?redirect=https://app.nsm.go.th/docs/auth-callback`
+3.  **การยืนยันตัวตน:** ผู้ใช้งานกรอกชื่อบัญชีและรหัสผ่านบนเว็บ UMS และระบบจะส่งกลับมายังหน้า Callback พร้อมแนบโทเคน: `/docs/auth-callback?token={jwt}`
+4.  **ส่งข้อมูลสิทธิ์หลังบ้าน:** หน้า React รับโทเคนจาก URL และเรียก API หลังบ้าน: `/api/auth/callback?token={jwt}`
+5.  **ตรวจสอบโทเคน:** หลังบ้านทำการยิงแบบ Server-to-server ไปถาม UMS ที่พาธ `/api/auth/me` พร้อมส่ง Header `Authorization: Bearer {jwt}` เพื่อดึงข้อมูลกลับมา
+6.  **บันทึกเซสชัน:** UMS คืนค่าข้อมูลสิทธิ์และหน่วยงานของโครงการ หลังบ้านทำการเก็บผู้ใช้ลงใน `req.session.user` และเปิดสิทธิ์เข้าสู่หน้าแรกของระบบจัดการเอกสาร
 
 ---
 
-## 3. Template Design & Drag-Drop Flow
-1.  **Select Template:** User navigates to Report Manager and selects a template to open the Template Designer canvas.
-2.  **Page Layout & Scale:** React initializes `ResizeObserver` on the viewport wrapper to scale the Canvas maintaining aspect ratio (e.g. A4 `595 x 842`).
-3.  **Add Fields:** Selecting fields from the Dropdown Palette appends fields with initial layouts to `template.pages[currentPageIndex].fields`.
-4.  **Drag-and-Resize UI:** 
-    *   `onPointerDown` captures start coordinate, boundary box, and current scale factor (`canvasScale.scale`).
-    *   `onPointerMove` computes displacement, divides by scale factor to maintain scale independence, and immutably updates field coordinates (`x`, `y`, `width`, `height`).
-    *   `onPointerUp` detaches event listeners.
-5.  **Save Layout:** Clicking "Save" calls `PUT /api/projects/:projectId/report-templates/:templateId` updating the database.
+## 2. โฟลว์การเข้าถึงด้วยกุญแจความปลอดภัย (Project Key Auth สำหรับผู้รับจ้าง)
+1.  **เปิดหน้าโครงการ:** ผู้รับเหมาภายนอกเปิดหน้าลิงก์ลงทะเบียนระบุกุญแจที่พาธ `/docs/projects/:projectId/login`
+2.  **ดึงข้อมูลโครงการเบื้องต้น:** หน้าจอทำการดึงข้อมูลสาธารณะ (ชื่อโครงการ, หน่วยงาน, ปีงบประมาณ) มาแสดงจาก API `/api/project-auth/project/:projectId/info` (โดยไม่ต้องเข้าสู่ระบบ)
+3.  **ส่งกุญแจเข้าตรวจสอบ:** ผู้ใช้กรอกชุดกุญแจรหัสเข้าสู่ระบบ และส่งยืนยันไปยัง API `/api/project-auth/login`
+4.  **เปรียบเทียบรหัสลับ:** ระบบหลังบ้านนำคีย์ที่กรอกมาแปลงเป็นรหัสแฮชแบบ SHA-256 และทำการจับคู่เปรียบเทียบใน Collection `ProjectKey` ของฐานข้อมูล
+5.  **ดักเช็กสถานะการหมดอายุ:** ตรวจสอบความถูกต้องว่าฟิลด์ `expires_at > Date.now()` และ `is_active === true`
+6.  **เริ่มต้นเซสชันโครงการ:** บันทึกข้อมูลคีย์และสิทธิ์ลงใน `req.session.project_user` พร้อมกำหนดอายุการคงอยู่ของคุกกี้เซสชันให้สอดคล้องตามวันหมดอายุของกุญแจนั้นจริง
 
 ---
 
-## 4. Report Print & Preview Flow
-1.  **Retrieve Templates:** Clicking "Print Report" in a detail page requests active templates via `/api/projects/:projectId/reports/:module/:recordId/templates`.
-2.  **Fetch Sample Record:** Clicking "Preview" in the Template Designer requests the latest record via `/projects/:projectId/:module?limit=1`.
-3.  **Generate PDF Endpoint:** Client opens or requests `GET /api/projects/:projectId/reports/:module/:recordId/generate/:templateId?preview=true` (preview flag skips active check).
-4.  **Load Assets:** Backend loads the template fields list, resolves the background PDF from the documents folder, and reads `THSarabunNew.ttf` binary font.
-5.  **Resolve Data Context:** Mongoose documents are converted to plain JS objects using `toObject()` or `.lean()`, then spread into a unified context object.
-6.  **Render Output:** Resolves fields dynamically, computes font metrics for text alignment, and draws texts on the canvas pages before returning the PDF buffer.
+## 3. โฟลว์การออกแบบจัดหน้าเทมเพลต (Template Designer & Drag-Drop)
+1.  **เลือกออกแบบเทมเพลต:** เจ้าหน้าที่ผู้ดูแลเปิดหน้าระบบจัดการรายงาน และเลือกเทมเพลตเพื่อเปิดหน้าจัดหน้าเอกสาร Template Designer
+2.  **ปรับสัดส่วนกระดาษอัตโนมัติ:** React จะสร้าง `ResizeObserver` ตรวจหาขนาดพื้นที่ว่างของเบราว์เซอร์ เพื่อบีบ/ขยาย Canvas ของตัวออกแบบให้รักษาอัตราส่วนที่ถูกต้องตลอดเวลา (เช่น A4 แนวตั้ง `595 x 842` พิกเซล)
+3.  **เลือกฟิลด์ข้อมูล:** ผู้ใช้ออกแบบเลือกคีย์ตัวแปรที่ต้องการจาก Dropdown Palette หน้าเว็บจะทำการแทรกพารามิเตอร์กล่องข้อความลงในสเตต `template.pages[currentPageIndex].fields`
+4.  **ลากย้ายและปรับขนาด (Drag-and-Resize):**
+    *   `onPointerDown` ล็อกตรรกะพิกัดตำแหน่งเริ่มต้น ขอบกล่องข้อความ และอัตราส่วนขยาย Canvas (`canvasScale.scale`)
+    *   `onPointerMove` ตรวจสอบผลต่างพิกัดพิกเซลเมาส์/สัมผัส แล้วหารด้วยมาตราส่วนขยายเพื่อแก้อาการเมาส์หลุดตำแหน่ง และทำการบันทึกพิกัดจริงแบบ Immutable Update (`x`, `y`, `width`, `height`)
+    *   `onPointerUp` ทำลายการดักฟังพิกัดการลาก
+5.  **เซฟลงฐานข้อมูล:** กดยืนยันบันทึก ระบบจะส่งอัปเดตข้อมูลพิกัดชุดใหม่ลงฐานข้อมูลผ่าน `PUT /api/projects/:projectId/report-templates/:templateId`
+
+---
+
+## 4. โฟลว์การสร้างและพิมพ์ตัวอย่างรายงาน (Report Print & Preview)
+1.  **โหลดเทมเพลตที่พร้อมใช้:** เมื่อกดปุ่ม "พิมพ์รายงาน" ในหน้าบันทึก ระบบดึงเฉพาะเทมเพลตที่มีสถานะใช้งานผ่านพาธ `/api/projects/:projectId/reports/:module/:recordId/templates`
+2.  **ดึงข้อมูลจริงจำลอง:** เมื่อกดปุ่ม "แสดงตัวอย่าง" ในหน้าออกแบบเทมเพลต หน้าบ้านจะดึงรายการประวัติงานล่าสุดของโครงการนั้นๆ จากพาธ `/projects/:projectId/:module?limit=1`
+3.  **เรียกสร้าง PDF หลังบ้าน:** หน้าบ้านส่งคำขอพิมพ์เอกสารผ่าน `/api/projects/:projectId/reports/:module/:recordId/generate/:templateId?preview=true` (ส่ง preview=true เพื่อยกเว้นการเช็กสถานะเทมเพลตที่กำลังร่าง)
+4.  **โหลดทรัพยากรส่วนกลาง:** หลังบ้านตรวจสอบพิกัดกล่องทั้งหมด, โหลด PDF/รูปภาพภาพพื้นหลังของหน้าจริงจากดิสก์, และอ่านไฟล์ฟอนต์ `THSarabunNew.ttf` เข้าสู่ระบบ
+5.  **จัดเตรียมตัวแปรฐานข้อมูล:** แปลงเอกสาร Mongoose Document ของทั้งโครงการและรายการรายงานให้เป็น Plain Object ด้วยการเรียกใช้ `.toObject()` หรือ `.lean()` เพื่อสลัดคลาสของ Mongoose และรวมคีย์ข้อมูลภาษาไทยที่ Enumerable เข้าสู่ Context
+6.  **วาดและส่งออกเอกสาร:** ทำการไล่แทนที่รหัสฟิลด์ด้วยข้อมูลจริง คำนวณความกว้างอักษรตามฟอนต์และปรับ Alignment (ซ้าย/ขวา/กลาง) จากนั้นใช้คำสั่ง `page.drawText()` บันทึกข้อความลงหน้ากระดาษ และ Stream กลับเป็น PDF Bytes ให้หน้าบ้านพรีวิวทันที

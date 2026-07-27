@@ -1,42 +1,42 @@
-# Contributing Guidelines (CONTRIBUTING.md)
+# ข้อตกลงการร่วมพัฒนาซอร์สโค้ด (CONTRIBUTING.md)
 
-Thank you for contributing to the Project Tracking system! Follow these instructions to make code contributions.
+ยินดีต้อนรับและขอบคุณผู้ร่วมมีส่วนร่วมในการพัฒนาระบบติดตามโครงการทุกท่าน! โปรดทำความเข้าใจคำแนะนำการจัดการและมาตรฐานในการส่งมอบงานด้านล่างนี้ก่อนดำเนินการ
 
-## 1. Local Setup
-1.  Clone the repository.
-2.  Install dependencies:
-    *   For Backend: `cd backend && npm install`
-    *   For Frontend: `cd frontend && npm install`
-3.  Configure local environment configurations by creating `backend/.env` copying from `backend/.env.example`.
+## 1. การจัดเตรียมบนสภาพแวดล้อมจำลอง (Local Setup)
+1.  ทำการโคลนซอร์สโค้ดจากระบบรีโมตลงมาบนเครื่องทำงานหลัก
+2.  ดำเนินการติดตั้งโมดูลที่เกี่ยวข้อง:
+    *   ฝั่งหลังบ้าน: `cd backend && npm install`
+    *   ฝั่งหน้าบ้าน: `cd frontend && npm install`
+3.  สร้างไฟล์ตัวกำหนดตัวแปรคอนฟิก `backend/.env` โดยก๊อปปี้คัดลอกจากต้นฉบับในไฟล์ `backend/.env.example`
 
 ---
 
-## 2. Coding Standards
+## 2. มาตรฐานและกฎระเบียบการเขียนโค้ด (Coding Standards)
 
-### Backend
-*   **Database Queries:** Use `.lean()` for read-only queries to improve execution speed and memory footprints.
-*   **Mongoose Objects:** Always convert Mongoose documents using `toObject()` before using destructuring or spread operations (`...`).
-*   **Error Logs:** Log full errors including stack trace using:
+### ระบบหลังบ้าน (Backend)
+*   **การสอบถามข้อมูล (Database Queries):** ใช้คำสั่งแบบอ่านอย่างเดียวด้วยการระบุ `.lean()` ต่อท้ายเสมอเพื่อประหยัดหน่วยความจำและทำงานได้รวดเร็ว
+*   **การแมป Mongoose Object:** ก่อนทำลายโครงสร้าง (destructuring) หรือใช้งาน Spread Operator (`...`) จะต้องแปลงข้อมูลจาก Mongoose Document ให้เป็น Plain Object ด้วยการทำ `.toObject()` ทุกครั้ง
+*   **การเก็บบันทึกประวัติผิดพลาด (Error Logs):** ให้บันทึกประวัติความเสียหายเต็มรูปแบบ (รวมถึง Stack Trace) ด้วยรูปแบบเทมเพลต:
     ```javascript
-    logger.error(`[Context] Action failed: ${err.stack || err}`);
+    logger.error(`[Context] การทำงานล้มเหลวเนื่องจาก: ${err.stack || err}`);
     ```
-*   **Route Guards:** Enforce auth policies using `authenticateProject` and `requireProjectPermission`.
+*   **การดักป้องกันสิทธิ์เราเตอร์ (Route Guards):** บังคับกรองเส้นทางอย่างถูกต้องเสมอผ่านมมิดเดิลแวร์ตรวจความปลอดภัย `authenticateProject` และ `requireProjectPermission`
 
-### Frontend
-*   **Styles:** Maintain the orange/primary theme design. Ensure components are responsive on mobile screen resolutions.
-*   **Interactions:** Support touch and pointer gestures using standard pointer listeners (`onPointerDown`).
-*   **Compilations:** Ensure Vite builds execute successfully before staging files:
+### ระบบหน้าบ้าน (Frontend)
+*   **การตกแต่งสไตล์:** ทำงานร่วมกับกรอบการออกแบบธีมสีส้มและหลักความกว้างแบบยืดหยุ่น (Responsive Design) เพื่อให้เปิดดูข้อมูลได้เหมาะสมในทุกสัดส่วนอุปกรณ์หน้าจอภาพ
+*   **การควบคุมการกด/สัมผัส:** รองรับเมาส์และการกดนิ้วมือสัมผัสโดยเปลี่ยนไปใช้ pointer events (`onPointerDown` ฯลฯ)
+*   **การทดสอบคอมไพล์:** ยืนยันว่าการบิลด์ระบบสำเร็จก่อนจะนำไฟล์เข้าสู่ Git:
     ```bash
     cd frontend && npm run build
     ```
 
 ---
 
-## 3. Pull Request & Commit Guidelines
-*   Write clear commit messages using the standard conventional commit format:
-    *   `feat: add print preview support`
-    *   `fix: resolve mongoose context resolver bug`
-*   Verify that backend unit tests pass:
+## 3. ระเบียบการกดยืนยันบันทึกผลงาน (Commit & PR Guidelines)
+*   ระบุข้อความการยืนยัน Commit ให้มีลักษณะตรงตามรูปแบบสากล (Conventional Commit) เพื่อความเป็นระเบียบและจำแนกได้ชัดเจน:
+    *   `feat: เพิ่มระบบตัวสลับและปุ่มตรวจสอบตัวอย่างรายงาน`
+    *   `fix: แก้ไขบั๊ก Mongoose context ในส่วนสร้างรายงาน PDF`
+*   ตรวจสอบความเรียบร้อยและรับรองว่าโค้ดไม่มีปัญหากับชุดการทดสอบย่อยที่มีอยู่ก่อนทำการส่งขึ้นรีโมต:
     ```bash
     cd backend && npm test
     ```
