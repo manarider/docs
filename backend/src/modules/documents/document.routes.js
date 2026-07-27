@@ -17,6 +17,7 @@ const {
   uploadUrlAttachment,
   downloadAttachment,
   deleteAttachment,
+  renameAttachment,
   listDeletedAttachments,
   restoreAttachment,
   permanentDeleteAttachment,
@@ -87,7 +88,7 @@ router.post(
   uploadAttachment
 );
 
-// เพิ่มลิงก์ Google Docs / Google Sheets (DOW เท่านั้น)
+// เพิ่มลิงก์ Google Docs / Google Sheets
 router.post(
   '/:id/attachments/url',
   authenticate,
@@ -97,6 +98,9 @@ router.post(
 
 // ดาวน์โหลดไฟล์แนบ
 router.get('/:id/attachments/:subId/download', authenticate, downloadLimiter, downloadAttachment);
+
+// แก้ไขชื่อไฟล์แนบ
+router.patch('/:id/attachments/:subId', authenticate, requireRole('member'), renameAttachment);
 
 // ลบไฟล์แนบ (soft delete)
 router.delete('/:id/attachments/:subId', authenticate, requireRole('member'), deleteAttachment);

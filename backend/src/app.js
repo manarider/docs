@@ -23,6 +23,11 @@ const departmentRoutes = require('./modules/departments/department.routes');
 const docTypeRoutes = require('./modules/doctypes/doctype.routes');
 const reportRoutes = require('./modules/reports/report.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
+const projectAuthRoutes = require('./modules/projects/project.auth.routes');
+const projectRoutes = require('./modules/projects/project.routes');
+const equipmentRoutes = require('./modules/projects/equipment.routes');
+const templateRoutes = require('./modules/report-templates/template.routes');
+const generatorRoutes = require('./modules/report-templates/generator.routes');
 const { initFileSizeLimitsFromDb } = require('./modules/documents/document.upload');
 
 const app = express();
@@ -105,6 +110,11 @@ app.use('/api/departments', departmentRoutes);
 app.use('/api/doctypes', docTypeRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/project-auth', projectAuthRoutes);
+app.use('/api/projects', projectRoutes);
+app.use('/api/projects', templateRoutes);
+app.use('/api/projects', generatorRoutes);
+app.use('/api/equipment', equipmentRoutes);
 
 // ─── Serve React Frontend (production) ───────────────────────────────────────
 const frontendDist = path.join(__dirname, '../../frontend/dist');

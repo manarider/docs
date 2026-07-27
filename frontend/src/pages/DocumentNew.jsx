@@ -56,10 +56,7 @@ export default function DocumentNew() {
     return () => window.removeEventListener('beforeunload', handler);
   }, []);
 
-  // ตรวจว่าประเภทที่เลือกเป็น DOW หรือไม่
-  const selectedType = types.find((t) => t._id === form.type_id);
-  const isDow = selectedType?.code?.toUpperCase() === 'DOW';
-  const acceptStr = isDow ? '.pdf,.doc,.docx,.xls,.xlsx' : '.pdf';
+  const acceptStr = '.pdf,.doc,.docx,.xls,.xlsx';
 
   const setFileField = (idx, field, val) => {
     setFiles((prev) => prev.map((f, i) => (i === idx ? { ...f, [field]: val } : f)));
@@ -69,10 +66,8 @@ export default function DocumentNew() {
   const addGoogleEntry = () => setFiles((prev) => [...prev, emptyGoogleEntry()]);
   const removeEntry = (idx) => setFiles((prev) => prev.filter((_, i) => i !== idx));
 
-  // รีเซ็ต files เมื่อเปลี่ยนประเภทจาก/ไป DOW
   const handleTypeChange = (typeId) => {
     setForm((f) => ({ ...f, type_id: typeId }));
-    setFiles([emptyFileEntry()]);
   };
 
   const handleSubmit = async (e) => {
@@ -243,9 +238,7 @@ export default function DocumentNew() {
                 ไฟล์แนบ <span className="text-red-500">*</span>
                 <span className="text-xs font-normal text-gray-400 ml-1">(บังคับอย่างน้อย 1 รายการ)</span>
               </p>
-              {isDow && (
-                <p className="text-xs text-blue-600 mt-0.5">DOW: รองรับ PDF, Word, Excel และลิงก์ Google Docs/Sheets</p>
-              )}
+              <p className="text-xs text-blue-600 mt-0.5">รองรับ PDF, Word, Excel และลิงก์ Google Docs/Sheets</p>
             </div>
             <div className="flex gap-2">
               <button
@@ -253,13 +246,11 @@ export default function DocumentNew() {
                 onClick={addFileEntry}
                 className="flex items-center gap-1 text-primary border border-primary px-3 py-1 rounded-lg text-xs hover:bg-orange-50 transition"
               >+ เพิ่มไฟล์</button>
-              {isDow && (
-                <button
-                  type="button"
-                  onClick={addGoogleEntry}
-                  className="flex items-center gap-1 text-blue-600 border border-blue-400 px-3 py-1 rounded-lg text-xs hover:bg-blue-50 transition"
-                >+ Google Link</button>
-              )}
+              <button
+                type="button"
+                onClick={addGoogleEntry}
+                className="flex items-center gap-1 text-blue-600 border border-blue-400 px-3 py-1 rounded-lg text-xs hover:bg-blue-50 transition"
+              >+ Google Link</button>
             </div>
           </div>
 
@@ -301,9 +292,7 @@ export default function DocumentNew() {
                       {f.file.name} ({(f.file.size / 1024 / 1024).toFixed(1)} MB)
                     </p>
                   )}
-                  {isDow && (
-                    <p className="text-xs text-gray-400 mt-0.5">รองรับ: PDF, .doc, .docx, .xls, .xlsx</p>
-                  )}
+                  <p className="text-xs text-gray-400 mt-0.5">รองรับ: PDF, .doc, .docx, .xls, .xlsx</p>
                 </div>
               ) : (
                 <div>

@@ -6,6 +6,7 @@ const navItems = [
   { to: '/documents', label: 'เอกสาร', icon: '📄' },
   { to: '/search', label: 'ค้นหา', icon: '🔍' },
   { to: '/reports', label: 'สถิติ', icon: '📊' },
+  { to: '/equipment-search', label: 'ค้นหาครุภัณฑ์', icon: '🔧' },
 ];
 
 const adminItems = [
@@ -14,7 +15,7 @@ const adminItems = [
   { to: '/admin/settings', label: 'ตั้งค่าระบบ', icon: '⚙️' },
 ];
 
-const ROLE_LEVEL = { superadmin: 50, admin: 40, manager: 30, member: 20, viewer: 10 };
+const ROLE_LEVEL = { superadmin: 50, admin: 40, manager: 30, staff: 25, member: 20, viewer: 10 };
 
 function NavItem({ to, icon, label, end, onClick }) {
   return (

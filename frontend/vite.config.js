@@ -15,4 +15,16 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // แยก PDF libraries ออกเป็น chunk แยก — โหลดเฉพาะเมื่อ export PDF
+          'pdf-libs': ['jspdf', 'html2canvas'],
+          // แยก React core
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
+  },
 })

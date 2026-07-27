@@ -30,7 +30,7 @@ const config = {
     baseUrl: process.env.UMS_BASE_URL || 'https://nssv.nsm.go.th/ums',
     loginPath: process.env.UMS_LOGIN_PATH || '/login',
     projectId: process.env.UMS_PROJECT_ID || '69cfa30f156114bd2461271b',
-    callbackUrl: process.env.APP_CALLBACK_URL || 'https://app.nsm.go.th/docs/api/auth/callback',
+    callbackUrl: process.env.APP_CALLBACK_URL || 'https://app.nsm.go.th/docs/auth-callback',
     meEndpoint: '/api/auth/me',
   },
 
@@ -47,10 +47,15 @@ const config = {
     maxDocSizeMB: parseInt(process.env.MAX_DOC_SIZE_MB, 10) || 50,
     maxImgSizeMB: parseInt(process.env.MAX_IMG_SIZE_MB, 10) || 3,
     maxImagesPerDoc: parseInt(process.env.MAX_IMAGES_PER_DOC, 10) || 4,
+    // ไฟล์แนบเอกสาร: รองรับ PDF + Word + Excel
     allowedDocMimes: [
       'application/pdf',
+      'application/msword',                                                             // .doc
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',       // .docx
+      'application/vnd.ms-excel',                                                      // .xls
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',             // .xlsx
     ],
-    // DOW: รองรับ PDF + Word + Excel
+    // Backward-compatible alias สำหรับโค้ดเดิมที่อ้างถึง DOW
     allowedDowMimes: [
       'application/pdf',
       'application/msword',                                                             // .doc

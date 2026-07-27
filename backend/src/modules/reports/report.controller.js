@@ -18,6 +18,7 @@ async function summary(req, res) {
 
     const isAdmin = ['superadmin', 'admin', 'manager'].includes(req.user?.role);
     let deptFilter = {};
+    // staff เห็นเฉพาะหน่วยงานตัวเอง
     if (!isAdmin && req.user?.deptId) {
       try {
         deptFilter = { dept_id: new mongoose.Types.ObjectId(req.user.deptId) };

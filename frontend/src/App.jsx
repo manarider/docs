@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ProjectAuthProvider } from './contexts/ProjectAuthContext';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import Documents from './pages/Documents';
@@ -17,6 +18,16 @@ import AdminAuditLog from './pages/AdminAuditLog';
 import AdminTrash from './pages/AdminTrash';
 import AdminSettings from './pages/AdminSettings';
 import PublicDownload from './pages/PublicDownload';
+import ProjectKeyLogin from './pages/ProjectKeyLogin';
+import ProjectTracker from './pages/ProjectTracker';
+import ProjectOverview from './pages/ProjectOverview';
+import ProjectDailyReports from './pages/ProjectDailyReports';
+import ProjectProcurement from './pages/ProjectProcurement';
+import ProjectAcceptance from './pages/ProjectAcceptance';
+import ProjectKeyManager from './pages/ProjectKeyManager';
+import EquipmentSearch from './pages/EquipmentSearch';
+import ProjectReportManager from './pages/ProjectReportManager';
+import TemplateDesigner from './pages/TemplateDesigner';
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -36,6 +47,18 @@ function AppRoutes() {
     <Routes>
       {/* Public — ไม่ต้อง login */}
       <Route path="/download/:token" element={<PublicDownload />} />
+      <Route path="/project-access" element={<ProjectKeyLogin />} />
+
+      {/* Project Tracker — accessible to both internal and KEY users */}
+      <Route path="/projects/:projectId" element={<ProjectTracker />}>
+        <Route index element={<ProjectOverview />} />
+        <Route path="daily-reports" element={<ProjectDailyReports />} />
+        <Route path="procurement" element={<ProjectProcurement />} />
+        <Route path="acceptance" element={<ProjectAcceptance />} />
+        <Route path="report-manager" element={<ProjectReportManager />} />
+        <Route path="report-manager/:templateId/designer" element={<TemplateDesigner />} />
+        <Route path="keys" element={<ProjectKeyManager />} />
+      </Route>
 
       {!user ? (
         <>
@@ -54,6 +77,7 @@ function AppRoutes() {
             <Route path="documents/:id/edit" element={<DocumentEdit />} />
             <Route path="search" element={<Search />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="equipment-search" element={<EquipmentSearch />} />
             <Route path="admin/departments" element={<AdminDepartments />} />
             <Route path="admin/doctypes" element={<AdminDocTypes />} />
             <Route path="admin/audit" element={<AdminAuditLog />} />
@@ -73,13 +97,16 @@ export default function App() {
       <Routes>
         {/* Public route — ไม่ต้องผ่าน AuthProvider เลย */}
         <Route path="/download/:token" element={<PublicDownload />} />
-        {/* ทุก route อื่น → ผ่าน Auth */}
+        <Route path="/project-access" element={<ProjectKeyLogin />} />
+        {/* ทุก route อื่น → ผ่าน Auth + ProjectAuth */}
         <Route
           path="*"
           element={
             <AuthProvider>
-              <Toaster position="top-right" />
-              <AppRoutes />
+              <ProjectAuthProvider>
+                <Toaster position="top-right" />
+                <AppRoutes />
+              </ProjectAuthProvider>
             </AuthProvider>
           }
         />

@@ -11,6 +11,10 @@ const AUDIT_ACTIONS = [
   'DELETE',
   'RESTORE',
   'SEARCH',
+  'GENERATE_KEY',
+  'REVOKE_KEY',
+  'KEY_ACCESS',
+  'EXTEND_KEY',
 ];
 
 const auditLogSchema = new mongoose.Schema(
@@ -21,7 +25,7 @@ const auditLogSchema = new mongoose.Schema(
     module: {
       type: String,
       required: true,
-      enum: ['AUTH', 'DOCUMENT', 'DEPARTMENT', 'DOCTYPE', 'ADMIN', 'REPORT'],
+      enum: ['AUTH', 'DOCUMENT', 'DEPARTMENT', 'DOCTYPE', 'ADMIN', 'REPORT', 'PROJECT', 'DAILY_REPORT', 'PROCUREMENT', 'WORK_ACCEPTANCE'],
     },
     resource_id: { type: String, default: null },
     ip_address: { type: String, required: true },

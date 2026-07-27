@@ -8,6 +8,46 @@ const logger = require('../../utils/logger');
 const UMS_PROJECT_ID = config.ums.projectId;
 
 /**
+ * ดึง permission ของ project โดยเทียบกับ projectKey
+ * รองรับกรณีที่ project เป็น string, populated object, หรือ projectKey field
+ * 
+ * @param {Array} projectPermissions - array ของ permissions
+ * @param {String} projectKey - project ID หรือ code ที่ต้องการตรวจสอบ
+ * @returns {Object|null} permission object หรือ null ถ้าไม่เจอ
+ */
+function extractProjectPermission(projectPermissions, projectKey) {
+  if (!Array.isArray(projectPermissions) || !projectKey) {
+    return null;
+  }
+
+  return projectPermissions.find((p) => {
+    // กรณีที่มี projectKey field โดยตรง
+    if (p.projectKey === projectKey) {
+      return true;
+    }
+
+    // กรณี project เป็น string (ObjectId)
+    if (typeof p.project === 'string') {
+      return p.project === projectKey;
+    }
+
+    // กรณี project ถูก populate เป็น object
+    if (p.project && typeof p.project === 'object') {
+      // เทียบกับ _id
+      if (p.project._id && String(p.project._id) === projectKey) {
+        return true;
+      }
+      // เทียบกับ code
+      if (p.project.code === projectKey) {
+        return true;
+      }
+    }
+
+    return false;
+  }) || null;
+}
+
+/**
  * GET /api/auth/login
  * Redirect ไปยัง UMS login พร้อมส่ง callback URL
  */
@@ -50,9 +90,7 @@ async function callback(req, res) {
     const umsUser = data.user;
 
     // ตรวจสอบว่าผู้ใช้มีสิทธิ์ในโปรเจกต์นี้
-    const permission = (umsUser.projectPermissions || []).find(
-      (p) => p.project === UMS_PROJECT_ID
-    );
+    const permission = extractProjectPermission(umsUser.projectPermissions, UMS_PROJECT_ID);
 
     if (!permission) {
       logger.warn(`[Auth] User ${umsUser.username} has no permission for project ${UMS_PROJECT_ID}`);

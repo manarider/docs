@@ -13,12 +13,13 @@ function authenticate(req, res, next) {
 
 /**
  * RBAC roles hierarchy
- * superadmin > admin > manager > member > viewer
+ * superadmin > admin > manager > staff > member > viewer
  */
 const ROLE_LEVEL = {
   superadmin: 50,
   admin: 40,
   manager: 30,
+  staff: 25,
   member: 20,
   viewer: 10,
 };

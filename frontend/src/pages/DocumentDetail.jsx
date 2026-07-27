@@ -8,7 +8,7 @@ export default function DocumentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const isAdmin = ['admin', 'superadmin', 'manager'].includes(user?.role);
+  const isAdmin = ['admin', 'superadmin', 'manager', 'staff'].includes(user?.role);
 
   const [doc, setDoc] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -17,6 +17,7 @@ export default function DocumentDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [shareInfo, setShareInfo] = useState(null); // DOW share info
+  const [openingProject, setOpeningProject] = useState(false); // PRJ tracker
 
   useEffect(() => {
     api.get(`/documents/${id}`)
@@ -41,6 +42,18 @@ export default function DocumentDetail() {
     document.body.appendChild(a);
     a.click();
     a.remove();
+  };
+
+  const handleOpenProjectTracker = async () => {
+    setOpeningProject(true);
+    try {
+      const { data } = await api.post(`/projects/by-document/${id}`);
+      navigate(`/projects/${data.data.projectId}`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'ไม่สามารถเปิดระบบโครงการได้');
+    } finally {
+      setOpeningProject(false);
+    }
   };
 
   const handleDownload = async (subId, name) => {
@@ -119,7 +132,25 @@ export default function DocumentDetail() {
       {/* Back + actions */}
       <div className="flex items-center justify-between">
         <Link to="/documents" className="text-sm text-primary hover:underline">← กลับรายการ</Link>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap justify-end">
+          {/* ปุ่มระบบติดตามโครงการ — เฉพาะ DocType PRJ */}
+          {doc.type_id?.code?.toUpperCase() === 'PRJ' && isAdmin && (
+            <button
+              onClick={handleOpenProjectTracker}
+              disabled={openingProject}
+              className="flex items-center gap-1.5 border border-green-500 text-green-700 px-4 py-1.5 rounded-lg text-sm hover:bg-green-50 transition disabled:opacity-50"
+            >
+              {openingProject ? (
+                <span className="w-3.5 h-3.5 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              )}
+              {openingProject ? 'กำลังเปิด...' : 'เปิดระบบติดตามโครงการ'}
+            </button>
+          )}
           <Link
             to={`/documents/${id}/edit`}
             className="border border-primary text-primary px-4 py-1.5 rounded-lg text-sm hover:bg-orange-50 transition"
@@ -171,8 +202,8 @@ export default function DocumentDetail() {
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 space-y-3">
           <p className="font-semibold text-blue-800 text-sm">📤 ลิงก์แชร์ดาวน์โหลด</p>
           <div className="text-xs text-blue-700 space-y-0.5">
-            <p>เริ่ม: {new Date(shareInfo.starts_at).toLocaleString('th-TH', { dateStyle: 'long', timeStyle: 'short' })}</p>
-            <p>สิ้นสุด: {new Date(shareInfo.expires_at).toLocaleString('th-TH', { dateStyle: 'long', timeStyle: 'short' })}</p>
+            <p>แชร์เมื่อ: {shareInfo.shared_at ? new Date(shareInfo.shared_at).toLocaleString('th-TH', { dateStyle: 'long', timeStyle: 'short' }) : '-'}</p>
+            <p className="text-green-700 font-medium">✅ ใช้งานได้ไม่จำกัดเวลา</p>
           </div>
           <div className="flex items-center gap-2">
             <input

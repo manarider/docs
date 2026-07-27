@@ -38,9 +38,9 @@ async function listDocuments(req, res) {
     if (is_public === 'true') filter.is_public = true;
     if (q) filter.$text = { $search: q };
 
-    // ถ้าไม่ใช่ admin/manager กรองโดยหน่วยงานตัวเอง + เอกสารสาธารณะที่ยังไม่หมดเวลา
+    // ถ้าไม่ใช่ admin/manager/staff กรองโดยหน่วยงานตัวเอง + เอกสารสาธารณะที่ยังไม่หมดเวลา
     const userRole = req.user?.role;
-    if (!['superadmin', 'admin', 'manager'].includes(userRole)) {
+    if (!['superadmin', 'admin', 'manager', 'staff'].includes(userRole)) {
       const now = new Date();
       const publicActiveCond = {
         is_public: true,
@@ -145,7 +145,12 @@ async function getDocument(req, res) {
     const isCurrentlyPublic =
       doc.is_public && (!doc.public_expires_at || new Date(doc.public_expires_at) > now);
     if (!isCurrentlyPublic && !['superadmin', 'admin', 'manager'].includes(userRole)) {
-      if (String(doc.created_by) !== req.user?.userId) {
+      // staff ดูได้เฉพาะหน่วยงานตัวเอง
+      if (userRole === 'staff') {
+        if (!req.user?.deptId || String(doc.dept_id) !== String(req.user.deptId)) {
+          return sendError(res, 403, 'คุณไม่มีสิทธิ์ดูเอกสารนี้');
+        }
+      } else if (String(doc.created_by) !== req.user?.userId) {
         return sendError(res, 403, 'คุณไม่มีสิทธิ์ดูเอกสารนี้');
       }
     }
@@ -183,10 +188,19 @@ async function updateDocument(req, res) {
     const doc = await Document.findOne({ _id: req.params.id, deleted_at: null });
     if (!doc) return sendError(res, 404, 'ไม่พบเอกสาร');
 
-    // ตรวจสิทธิ์: owner หรือ admin+
+    // ตรวจสิทธิ์: owner, staff (ในหน่วยงานเดียวกัน), หรือ admin+
     const userRole = req.user.role;
-    if (!['superadmin', 'admin'].includes(userRole) && String(doc.created_by) !== req.user.userId) {
-      return sendError(res, 403, 'คุณไม่มีสิทธิ์แก้ไขเอกสารนี้');
+    const isSameDept = req.user?.deptId && String(doc.dept_id) === String(req.user.deptId);
+    
+    if (!['superadmin', 'admin'].includes(userRole)) {
+      // staff แก้ไขได้ทุกเอกสารในหน่วยงานตัวเอง
+      if (userRole === 'staff' && !isSameDept) {
+        return sendError(res, 403, 'คุณไม่มีสิทธิ์แก้ไขเอกสารนี้');
+      }
+      // member/viewer แก้ไขได้เฉพาะเอกสารที่ตัวเองสร้าง
+      if (userRole !== 'staff' && String(doc.created_by) !== req.user.userId) {
+        return sendError(res, 403, 'คุณไม่มีสิทธิ์แก้ไขเอกสารนี้');
+      }
     }
 
     if (title !== undefined) doc.title = title;
@@ -241,6 +255,21 @@ async function deleteDocument(req, res) {
     const doc = await Document.findOne({ _id: req.params.id, deleted_at: null });
     if (!doc) return sendError(res, 404, 'ไม่พบเอกสาร');
 
+    // ตรวจสิทธิ์: owner, staff (ในหน่วยงานเดียวกัน), หรือ admin+
+    const userRole = req.user.role;
+    const isSameDept = req.user?.deptId && String(doc.dept_id) === String(req.user.deptId);
+    
+    if (!['superadmin', 'admin'].includes(userRole)) {
+      // staff ลบได้ทุกเอกสารในหน่วยงานตัวเอง
+      if (userRole === 'staff' && !isSameDept) {
+        return sendError(res, 403, 'คุณไม่มีสิทธิ์ลบเอกสารนี้');
+      }
+      // member/viewer ลบได้เฉพาะเอกสารที่ตัวเองสร้าง
+      if (userRole !== 'staff' && String(doc.created_by) !== req.user.userId) {
+        return sendError(res, 403, 'คุณไม่มีสิทธิ์ลบเอกสารนี้');
+      }
+    }
+
     doc.deleted_at = new Date();
     doc.deleted_by = req.user.userId;
     await doc.save();
@@ -264,7 +293,7 @@ async function deleteDocument(req, res) {
 
 /**
  * POST /api/documents/:id/attachments
- * อัปโหลดไฟล์แนบ (PDF/Word/Excel/PPT)
+ * อัปโหลดไฟล์แนบ (PDF/Word/Excel)
  */
 async function uploadAttachment(req, res) {
   try {
@@ -334,7 +363,7 @@ async function uploadAttachment(req, res) {
 
 /**
  * POST /api/documents/:id/attachments/url
- * เพิ่ม Google Docs / Google Sheets เป็นไฟล์แนบ (เฉพาะ DOW)
+ * เพิ่ม Google Docs / Google Sheets เป็นไฟล์แนบ
  */
 async function uploadUrlAttachment(req, res) {
   try {
@@ -342,27 +371,21 @@ async function uploadUrlAttachment(req, res) {
 
     if (!sub_title?.trim()) return sendError(res, 400, 'กรุณาระบุชื่อเอกสารแนบ');
 
-    // ตรวจว่า source_url เป็น Google Docs หรือ Google Sheets
-    const GOOGLE_URL_PATTERN = /https:\/\/docs\.google\.com\/(document|spreadsheets)\//;
-    if (!source_url || !GOOGLE_URL_PATTERN.test(source_url)) {
+    const trimmedSourceUrl = source_url?.trim();
+    const GOOGLE_URL_PATTERN = /^https:\/\/docs\.google\.com\/(document|spreadsheets)\//;
+    if (!trimmedSourceUrl || !GOOGLE_URL_PATTERN.test(trimmedSourceUrl)) {
       return sendError(res, 400, 'URL ไม่ถูกต้อง รองรับเฉพาะ Google Docs และ Google Sheets เท่านั้น');
     }
 
-    const doc = await Document.findOne({ _id: req.params.id, deleted_at: null })
-      .populate('type_id', 'code');
+    const doc = await Document.findOne({ _id: req.params.id, deleted_at: null });
     if (!doc) return sendError(res, 404, 'ไม่พบเอกสาร');
-
-    // เฉพาะเอกสาร DOW เท่านั้น
-    if (doc.type_id?.code?.toUpperCase() !== 'DOW') {
-      return sendError(res, 400, 'สามารถเพิ่มลิงก์ Google ได้เฉพาะเอกสารประเภท DOW เท่านั้น');
-    }
 
     const subId = uuidv4();
     doc.attachments.push({
       sub_id: subId,
       sub_title: sub_title.trim(),
       att_type: 'google_url',
-      source_url,
+      source_url: trimmedSourceUrl,
       uploaded_by: doc.created_by,
     });
     await doc.save();
@@ -375,7 +398,7 @@ async function uploadUrlAttachment(req, res) {
       resourceId: doc._id,
       ipAddress: getIp(req),
       userAgent: req.headers['user-agent'],
-      details: { sub_id: subId, type: 'google_url', source_url },
+      details: { sub_id: subId, type: 'google_url', source_url: trimmedSourceUrl },
     });
 
     const added = doc.attachments[doc.attachments.length - 1].toObject();
@@ -454,8 +477,17 @@ async function deleteAttachment(req, res) {
     if (!doc) return sendError(res, 404, 'ไม่พบเอกสาร');
 
     const userRole = req.user.role;
-    if (!['superadmin', 'admin'].includes(userRole) && String(doc.created_by) !== req.user.userId) {
-      return sendError(res, 403, 'คุณไม่มีสิทธิ์ลบไฟล์แนบนี้');
+    const isSameDept = req.user?.deptId && String(doc.dept_id) === String(req.user.deptId);
+    
+    if (!['superadmin', 'admin'].includes(userRole)) {
+      // staff ลบไฟล์แนบได้ในเอกสารของหน่วยงานตัวเอง
+      if (userRole === 'staff' && !isSameDept) {
+        return sendError(res, 403, 'คุณไม่มีสิทธิ์ลบไฟล์แนบนี้');
+      }
+      // member/viewer ลบได้เฉพาะเอกสารที่ตัวเองสร้าง
+      if (userRole !== 'staff' && String(doc.created_by) !== req.user.userId) {
+        return sendError(res, 403, 'คุณไม่มีสิทธิ์ลบไฟล์แนบนี้');
+      }
     }
 
     const att = (doc.attachments || []).find((a) => a.sub_id === req.params.subId);
@@ -488,6 +520,45 @@ async function deleteAttachment(req, res) {
     return sendSuccess(res, null, 'ลบไฟล์แนบเรียบร้อย');
   } catch (err) {
     logger.error('[Document] deleteAttachment error:', err.message);
+    return sendError(res, 500, 'เกิดข้อผิดพลาด');
+  }
+}
+
+// PATCH /:id/attachments/:subId  — เปลี่ยนชื่อ sub_title
+async function renameAttachment(req, res) {
+  try {
+    const { sub_title } = req.body;
+    if (!sub_title || !sub_title.trim()) return sendError(res, 400, 'กรุณาระบุชื่อเอกสารย่อย');
+
+    const doc = await Document.findOne({ _id: req.params.id, deleted_at: null }).lean();
+    if (!doc) return sendError(res, 404, 'ไม่พบเอกสาร');
+
+    const userRole = req.user.role;
+    const isSameDept = req.user?.deptId && String(doc.dept_id) === String(req.user.deptId);
+    
+    if (!['superadmin', 'admin'].includes(userRole)) {
+      // staff แก้ไขไฟล์แนบได้ในเอกสารของหน่วยงานตัวเอง
+      if (userRole === 'staff' && !isSameDept) {
+        return sendError(res, 403, 'คุณไม่มีสิทธิ์แก้ไขไฟล์แนบนี้');
+      }
+      // member/viewer แก้ไขได้เฉพาะเอกสารที่ตัวเองสร้าง
+      if (userRole !== 'staff' && String(doc.created_by) !== req.user.userId) {
+        return sendError(res, 403, 'คุณไม่มีสิทธิ์แก้ไขไฟล์แนบนี้');
+      }
+    }
+
+    const att = (doc.attachments || []).find((a) => a.sub_id === req.params.subId && !a.deleted_at);
+    if (!att) return sendError(res, 404, 'ไม่พบไฟล์แนบ');
+
+    const result = await Document.updateOne(
+      { _id: doc._id, 'attachments.sub_id': req.params.subId },
+      { $set: { 'attachments.$.sub_title': sub_title.trim() } }
+    );
+    if (result.modifiedCount === 0) return sendError(res, 404, 'ไม่พบไฟล์แนบ');
+
+    return sendSuccess(res, { sub_title: sub_title.trim() }, 'แก้ไขชื่อเรียบร้อย');
+  } catch (err) {
+    logger.error('[Document] renameAttachment error:', err.message);
     return sendError(res, 500, 'เกิดข้อผิดพลาด');
   }
 }
@@ -952,8 +1023,7 @@ async function buildShareInfo(doc, token) {
   const qrCode = await QRCode.toDataURL(shareUrl, { errorCorrectionLevel: 'M', margin: 2 });
   return {
     token,
-    starts_at: doc.download_share.starts_at,
-    expires_at: doc.download_share.expires_at,
+    shared_at: doc.download_share.starts_at,
     share_url: shareUrl,
     qr_code: qrCode,
   };
@@ -982,27 +1052,16 @@ async function createShare(req, res) {
       return sendError(res, 403, 'คุณไม่มีสิทธิ์แชร์เอกสารนี้');
     }
 
-    const { starts_at, expires_at } = req.body;
-    if (!starts_at || !expires_at) return sendError(res, 400, 'กรุณาระบุวันเวลาเริ่มและสิ้นสุด');
-
-    const startsDate = new Date(starts_at);
-    const expiresDate = new Date(expires_at);
-    if (isNaN(startsDate.getTime()) || isNaN(expiresDate.getTime())) {
-      return sendError(res, 400, 'รูปแบบวันเวลาไม่ถูกต้อง');
-    }
-    if (expiresDate <= startsDate) {
-      return sendError(res, 400, 'วันสิ้นสุดต้องมากกว่าวันเริ่มต้น');
-    }
-
     // ตรวจ attachment (ต้องมีไฟล์แนบอย่างน้อย 1 รายการ)
     const activeAtts = (doc.attachments || []).filter((a) => !a.deleted_at);
     if (activeAtts.length === 0) {
       return sendError(res, 400, 'เอกสารต้องมีไฟล์แนบอย่างน้อย 1 รายการก่อนแชร์');
     }
 
-    // สร้าง token ใหม่ทุกครั้งที่แชร์
+    // สร้าง token ใหม่ทุกครั้งที่แชร์ — ไม่มีวันหมดอายุ ใช้ได้จนกว่าจะยกเลิกหรือลบไฟล์
     const token = crypto.randomBytes(32).toString('hex');
-    doc.download_share = { token, starts_at: startsDate, expires_at: expiresDate };
+    const sharedAt = new Date();
+    doc.download_share = { token, starts_at: sharedAt, expires_at: null };
     await doc.save();
 
     await logAction({
@@ -1013,7 +1072,7 @@ async function createShare(req, res) {
       resourceId: doc._id,
       ipAddress: getIp(req),
       userAgent: req.headers['user-agent'],
-      details: { starts_at: startsDate, expires_at: expiresDate },
+      details: { shared_at: sharedAt },
     });
 
     const shareInfo = await buildShareInfo(doc, token);
@@ -1078,15 +1137,6 @@ async function getShare(req, res) {
       return sendSuccess(res, null, 'ยังไม่มีลิงก์แชร์');
     }
 
-    const now = new Date();
-    // ถ้าหมดเวลาแล้ว ให้ auto-clear
-    if (doc.download_share.expires_at && new Date(doc.download_share.expires_at) <= now) {
-      await Document.updateOne({ _id: doc._id }, {
-        $set: { 'download_share.token': null, 'download_share.starts_at': null, 'download_share.expires_at': null },
-      });
-      return sendSuccess(res, null, 'ลิงก์แชร์หมดอายุแล้ว');
-    }
-
     const shareInfo = await buildShareInfo(doc, doc.download_share.token);
     return sendSuccess(res, shareInfo, 'ข้อมูลลิงก์แชร์');
   } catch (err) {
@@ -1110,6 +1160,7 @@ module.exports = {
   uploadUrlAttachment,
   downloadAttachment,
   deleteAttachment,
+  renameAttachment,
   listDeletedAttachments,
   restoreAttachment,
   permanentDeleteAttachment,

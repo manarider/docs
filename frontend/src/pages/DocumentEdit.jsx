@@ -15,7 +15,7 @@ export default function DocumentEdit() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const isAdmin = ['admin', 'superadmin', 'manager'].includes(user?.role);
+  const isAdmin = ['superadmin', 'admin', 'staff'].includes(user?.role);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -32,13 +32,17 @@ export default function DocumentEdit() {
   const [attachments, setAttachments] = useState([]); // ไฟล์แนบที่มีอยู่แล้ว
   const [newFiles, setNewFiles] = useState([emptyFileEntry()]);
   const [deletingSubId, setDeletingSubId] = useState(null); // sub_id กำลังลบ
+  const [replaceTarget, setReplaceTarget] = useState(null); // { subId, subTitle } ที่กำลังเปลี่ยน
+  const [replaceFile, setReplaceFile] = useState(null);
+  const [replacingSubId, setReplacingSubId] = useState(null);
+  const [editingSubId, setEditingSubId] = useState(null); // sub_id ที่กำลังแก้ชื่อ
+  const [editingTitle, setEditingTitle] = useState('');   // ค่าชื่อชั่วคราว
   const blockNavRef = useRef(false);
 
   // DOW share state
   const [isDownloadType, setIsDownloadType] = useState(false);
-  const [shareInfo, setShareInfo] = useState(null); // { token, qr_code, share_url, starts_at, expires_at }
+  const [shareInfo, setShareInfo] = useState(null); // { token, qr_code, share_url, shared_at }
   const [shareModal, setShareModal] = useState(false);
-  const [shareForm, setShareForm] = useState({ starts_at: '', expires_at: '' });
   const [sharingLoading, setSharingLoading] = useState(false);
   const [deletingShare, setDeletingShare] = useState(false);
 
@@ -79,18 +83,9 @@ export default function DocumentEdit() {
   }, []);
 
   const handleCreateShare = async () => {
-    if (!shareForm.starts_at || !shareForm.expires_at) {
-      return toast.error('กรุณาระบุวันเวลาเริ่มและสิ้นสุด');
-    }
-    if (new Date(shareForm.expires_at) <= new Date(shareForm.starts_at)) {
-      return toast.error('วันสิ้นสุดต้องมากกว่าวันเริ่มต้น');
-    }
     setSharingLoading(true);
     try {
-      const { data } = await api.post(`/documents/${id}/share`, {
-        starts_at: new Date(shareForm.starts_at).toISOString(),
-        expires_at: new Date(shareForm.expires_at).toISOString(),
-      });
+      const { data } = await api.post(`/documents/${id}/share`);
       setShareInfo(data.data);
       setShareModal(false);
       toast.success('สร้างลิงก์แชร์เรียบร้อย');
@@ -142,6 +137,46 @@ export default function DocumentEdit() {
       toast.error(err.response?.data?.message || 'ลบไม่สำเร็จ');
     } finally {
       setDeletingSubId(null);
+    }
+  };
+
+  const handleRenameAttachment = async (subId) => {
+    const newTitle = editingTitle.trim();
+    if (!newTitle) { setEditingSubId(null); return; }
+    try {
+      await api.patch(`/documents/${id}/attachments/${subId}`, { sub_title: newTitle });
+      setAttachments((prev) => prev.map((a) => a.sub_id === subId ? { ...a, sub_title: newTitle } : a));
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'แก้ไขชื่อไม่สำเร็จ');
+    } finally {
+      setEditingSubId(null);
+    }
+  };
+
+  const handleReplaceAttachment = async () => {
+    if (!replaceFile || !replaceTarget) return;
+    setReplacingSubId(replaceTarget.subId);
+    blockNavRef.current = true;
+    try {
+      // 1. soft-delete ไฟล์เดิม (ย้ายไปถังขยะของ admin)
+      await api.delete(`/documents/${id}/attachments/${replaceTarget.subId}`);
+      // 2. upload ไฟล์ใหม่ ใช้ชื่อเดิม
+      const fd = new FormData();
+      fd.append('file', replaceFile);
+      fd.append('sub_title', replaceTarget.subTitle);
+      const { data } = await api.post(`/documents/${id}/attachments`, fd);
+      setAttachments((prev) => [
+        ...prev.filter((a) => a.sub_id !== replaceTarget.subId),
+        data.data,
+      ]);
+      toast.success('เปลี่ยนไฟล์แนบเรียบร้อย');
+      setReplaceTarget(null);
+      setReplaceFile(null);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'เปลี่ยนไฟล์ไม่สำเร็จ');
+    } finally {
+      setReplacingSubId(null);
+      blockNavRef.current = false;
     }
   };
 
@@ -275,22 +310,24 @@ export default function DocumentEdit() {
               {!shareInfo ? (
                 <button
                   type="button"
-                  onClick={() => setShareModal(true)}
-                  className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition"
+                  onClick={handleCreateShare}
+                  disabled={sharingLoading}
+                  className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition disabled:opacity-60"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                       d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                   </svg>
-                  แชร์
+                  {sharingLoading ? 'กำลังสร้าง...' : 'แชร์'}
                 </button>
               ) : (
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => setShareModal(true)}
-                    className="text-xs border border-blue-400 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition"
-                  >ตั้งเวลาใหม่</button>
+                    onClick={handleCreateShare}
+                    disabled={sharingLoading}
+                    className="text-xs border border-blue-400 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition disabled:opacity-60"
+                  >{sharingLoading ? 'กำลังสร้าง...' : 'สร้างลิงก์ใหม่'}</button>
                   <button
                     type="button"
                     onClick={handleDeleteShare}
@@ -303,10 +340,10 @@ export default function DocumentEdit() {
 
             {shareInfo && (
               <div className="space-y-3">
-                {/* เวลา */}
-                <div className="text-xs text-blue-700 space-y-0.5">
-                  <p>เริ่ม: {new Date(shareInfo.starts_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</p>
-                  <p>สิ้นสุด: {new Date(shareInfo.expires_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</p>
+                {/* วันที่แชร์ */}
+                <div className="text-xs text-blue-700">
+                  <p>แชร์เมื่อ: {shareInfo.shared_at ? new Date(shareInfo.shared_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : 'ไม่มีข้อมูล'}</p>
+                  <p className="text-green-700 font-medium">✅ ใช้ได้ไม่จำกัดเวลา · ยกเลิกได้ด้วยปุ่ม &ldquo;ยกเลิกแชร์&rdquo;</p>
                 </div>
 
                 {/* URL */}
@@ -348,7 +385,7 @@ export default function DocumentEdit() {
             )}
 
             {!shareInfo && (
-              <p className="text-xs text-blue-600">กดปุ่ม "แชร์" เพื่อสร้างลิงก์และ QR Code สำหรับดาวน์โหลด</p>
+              <p className="text-xs text-blue-600">กดปุ่ม &ldquo;แชร์&rdquo; เพื่อสร้างลิงก์และ QR Code สำหรับดาวน์โหลด — ใช้งานได้ไม่จำกัดเวลา</p>
             )}
           </div>
         )}
@@ -410,14 +447,35 @@ export default function DocumentEdit() {
                     <th className="text-left px-4 py-2 font-medium">ชื่อเอกสารย่อย</th>
                     <th className="text-left px-4 py-2 font-medium">ชื่อไฟล์</th>
                     <th className="text-right px-4 py-2 font-medium">ขนาด</th>
-                    {attachments.length > 1 && <th className="px-4 py-2"></th>}
+                    <th className="px-4 py-2"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {attachments.map((att, idx) => (
                     <tr key={att.sub_id} className="hover:bg-gray-50">
                       <td className="px-4 py-2 text-gray-400">{idx + 1}</td>
-                      <td className="px-4 py-2 font-medium text-gray-800">{att.sub_title}</td>
+                      <td className="px-4 py-2 font-medium text-gray-800">
+                        {editingSubId === att.sub_id ? (
+                          <input
+                            autoFocus
+                            type="text"
+                            value={editingTitle}
+                            onChange={(e) => setEditingTitle(e.target.value)}
+                            onBlur={() => handleRenameAttachment(att.sub_id)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.target.blur();
+                              if (e.key === 'Escape') { setEditingSubId(null); }
+                            }}
+                            className="border border-blue-400 rounded px-2 py-0.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          />
+                        ) : (
+                          <span
+                            title="คลิกเพื่อแก้ไขชื่อ"
+                            onClick={() => { setEditingSubId(att.sub_id); setEditingTitle(att.sub_title); }}
+                            className="cursor-pointer hover:bg-blue-50 hover:text-blue-700 rounded px-1 -mx-1 transition-colors"
+                          >{att.sub_title}</span>
+                        )}
+                      </td>
                       <td className="px-4 py-2 text-gray-500 max-w-[200px] truncate" title={att.original_name || att.source_url}>
                         {att.att_type === 'google_url' ? (
                           <span className="text-blue-600 text-xs">🔗 Google Link</span>
@@ -426,18 +484,30 @@ export default function DocumentEdit() {
                       <td className="px-4 py-2 text-gray-400 text-right whitespace-nowrap">
                         {att.att_type === 'google_url' ? '—' : `${(att.file_size / 1024).toFixed(1)} KB`}
                       </td>
-                      {attachments.length > 1 && (
-                        <td className="px-4 py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteAttachment(att.sub_id, att.sub_title)}
-                            disabled={deletingSubId === att.sub_id}
-                            className="text-red-500 hover:text-red-700 text-xs font-medium disabled:opacity-50"
-                          >
-                            {deletingSubId === att.sub_id ? 'กำลังลบ...' : 'ลบ'}
-                          </button>
-                        </td>
-                      )}
+                      <td className="px-4 py-2 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-3">
+                          {att.att_type !== 'google_url' && (
+                            <button
+                              type="button"
+                              onClick={() => { setReplaceTarget({ subId: att.sub_id, subTitle: att.sub_title }); setReplaceFile(null); }}
+                              disabled={replacingSubId === att.sub_id}
+                              className="text-blue-500 hover:text-blue-700 text-xs font-medium disabled:opacity-50"
+                            >
+                              {replacingSubId === att.sub_id ? 'กำลังเปลี่ยน...' : 'เปลี่ยนไฟล์'}
+                            </button>
+                          )}
+                          {isAdmin && attachments.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAttachment(att.sub_id, att.sub_title)}
+                              disabled={deletingSubId === att.sub_id}
+                              className="text-red-500 hover:text-red-700 text-xs font-medium disabled:opacity-50"
+                            >
+                              {deletingSubId === att.sub_id ? 'กำลังลบ...' : 'ลบ'}
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -453,7 +523,7 @@ export default function DocumentEdit() {
               <p className="text-sm font-medium text-gray-700">
                 เพิ่มไฟล์แนบ
                 <span className="text-xs font-normal text-gray-400 ml-1">
-                  {isDownloadType ? '(PDF, Word, Excel หรือ Google Link)' : '(ไม่บังคับ เฉพาะ PDF)'}
+                  (ไม่บังคับ PDF, Word, Excel หรือ Google Link)
                 </span>
               </p>
             </div>
@@ -463,13 +533,11 @@ export default function DocumentEdit() {
                 onClick={addFileEntry}
                 className="flex items-center gap-1 text-primary border border-primary px-3 py-1 rounded-lg text-xs hover:bg-orange-50 transition"
               >+ เพิ่มไฟล์</button>
-              {isDownloadType && (
-                <button
-                  type="button"
-                  onClick={addGoogleEntry}
-                  className="flex items-center gap-1 text-blue-600 border border-blue-400 px-3 py-1 rounded-lg text-xs hover:bg-blue-50 transition"
-                >+ Google Link</button>
-              )}
+              <button
+                type="button"
+                onClick={addGoogleEntry}
+                className="flex items-center gap-1 text-blue-600 border border-blue-400 px-3 py-1 rounded-lg text-xs hover:bg-blue-50 transition"
+              >+ Google Link</button>
             </div>
           </div>
 
@@ -498,11 +566,11 @@ export default function DocumentEdit() {
               {f.entry_type === 'file' ? (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">
-                    {isDownloadType ? 'เลือกไฟล์ (PDF, Word, Excel)' : 'เลือกไฟล์ PDF'}
+                    เลือกไฟล์ (PDF, Word, Excel)
                   </label>
                   <input
                     type="file"
-                    accept={isDownloadType ? '.pdf,.doc,.docx,.xls,.xlsx' : '.pdf'}
+                    accept=".pdf,.doc,.docx,.xls,.xlsx"
                     onChange={(e) => setFileField(idx, 'file', e.target.files[0] || null)}
                     className="text-sm text-gray-600"
                   />
@@ -548,32 +616,13 @@ export default function DocumentEdit() {
         </div>
       </form>
 
-      {/* Share Modal */}
+      {/* Share Modal — ยืนยันการสร้างลิงก์ใหม่ */}
       {shareModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
-            <h3 className="font-bold text-gray-800 text-lg">ตั้งเวลาการแชร์</h3>
-            <p className="text-xs text-gray-500">กำหนดช่วงเวลาที่ผู้รับลิงก์สามารถดาวน์โหลดเอกสารได้</p>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">วันเวลาเริ่มต้น</label>
-                <input
-                  type="datetime-local"
-                  value={shareForm.starts_at}
-                  onChange={(e) => setShareForm((f) => ({ ...f, starts_at: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">วันเวลาสิ้นสุด</label>
-                <input
-                  type="datetime-local"
-                  value={shareForm.expires_at}
-                  onChange={(e) => setShareForm((f) => ({ ...f, expires_at: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-                />
-              </div>
-            </div>
+            <h3 className="font-bold text-gray-800 text-lg">สร้างลิงก์แชร์ใหม่</h3>
+            <p className="text-sm text-gray-600">ต้องการสร้างลิงก์แชร์ใหม่? ลิงก์เดิมจะใช้งานไม่ได้อีกต่อไป</p>
+            <p className="text-xs text-blue-600">ลิงก์ใหม่จะใช้งานได้ไม่จำกัดเวลา</p>
             <div className="flex gap-3 justify-end pt-1">
               <button
                 type="button"
@@ -587,6 +636,54 @@ export default function DocumentEdit() {
                 disabled={sharingLoading}
                 className="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
               >{sharingLoading ? 'กำลังสร้าง...' : 'ยืนยัน'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Replace Attachment Modal */}
+      {replaceTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
+            <h3 className="font-bold text-gray-800 text-lg">เปลี่ยนไฟล์แนบ</h3>
+            <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3 space-y-1">
+              <p className="text-xs font-semibold text-orange-700">⚠️ คำเตือน</p>
+              <p className="text-xs text-orange-700">
+                การเปลี่ยนเอกสารจะทำให้ไม่สามารถเข้าถึงเอกสารเดิมได้
+                ไฟล์เดิมจะถูกย้ายไปยังถังขยะของแอดมิน
+              </p>
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs text-gray-500">
+                ไฟล์ที่ต้องการเปลี่ยน:{' '}
+                <span className="font-medium text-gray-700">{replaceTarget.subTitle}</span>
+              </p>
+              <label className="block text-xs font-medium text-gray-600">เลือกไฟล์ใหม่ (PDF, Word, Excel)</label>
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx,.xls,.xlsx"
+                onChange={(e) => setReplaceFile(e.target.files[0] || null)}
+                className="text-sm text-gray-600 w-full"
+              />
+              {replaceFile && (
+                <p className="text-xs text-gray-400">
+                  {replaceFile.name} ({(replaceFile.size / 1024 / 1024).toFixed(1)} MB)
+                </p>
+              )}
+            </div>
+            <div className="flex gap-3 justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => { setReplaceTarget(null); setReplaceFile(null); }}
+                disabled={!!replacingSubId}
+                className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-60"
+              >ยกเลิก</button>
+              <button
+                type="button"
+                onClick={handleReplaceAttachment}
+                disabled={!replaceFile || !!replacingSubId}
+                className="bg-orange-500 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-60"
+              >{replacingSubId ? 'กำลังเปลี่ยน...' : 'ยืนยันการเปลี่ยน'}</button>
             </div>
           </div>
         </div>
