@@ -182,6 +182,90 @@ function getFieldValue(record, fieldId, module) {
 }
 
 /**
+ * ดึงรายการรูปภาพ (metadata: file_path, mime_type) สำหรับ field ประเภท image ตาม fieldId
+ */
+function getImageList(record, fieldId, module) {
+  if (module === 'daily_report') {
+    if (fieldId === 'report.photos') return record.photos || [];
+    if (fieldId === 'report.equipmentPhotos') {
+      return (record.equipment_items || []).map((e) => e.photo).filter(Boolean);
+    }
+  }
+  if (module === 'procurement') {
+    if (fieldId === 'procurement.receivePhotos') return record.receive_photos || [];
+    if (fieldId === 'procurement.inspectionPhotos') return record.inspection_photos || [];
+  }
+  if (module === 'acceptance') {
+    if (fieldId === 'acceptance.inspectionPhotos') return record.inspection_photos || [];
+  }
+  return [];
+}
+
+/**
+ * ฝังไฟล์รูปภาพลงใน pdfDoc (รองรับ JPEG/PNG โดยลองทั้งสองแบบ เนื่องจากไฟล์ที่จัดเก็บถูก resize เป็น JPEG เสมอ)
+ */
+async function embedImageFromFile(pdfDoc, filePath) {
+  const buffer = await fs.readFile(filePath);
+  try {
+    return await pdfDoc.embedJpg(buffer);
+  } catch {
+    return await pdfDoc.embedPng(buffer);
+  }
+}
+
+/**
+ * วาดรูปภาพหลายรูปเป็นกริด (rows x cols) ภายในขอบเขตของ field
+ * แต่ละรูปถูกวาดแบบ "contain" (คงสัดส่วนเดิม ไม่ครอบตัด) และจัดกึ่งกลางในแต่ละช่อง
+ */
+async function drawImageGrid(pdfDoc, page, field, images, pageHeight, storageBase) {
+  const rows = Math.max(1, field.gridRows || 1);
+  const cols = Math.max(1, field.gridCols || 1);
+  const gap = field.gap ?? 4;
+  const cellWidth = (field.width - gap * (cols - 1)) / cols;
+  const cellHeight = (field.height - gap * (rows - 1)) / rows;
+  const maxCount = rows * cols;
+
+  for (let i = 0; i < Math.min(images.length, maxCount); i++) {
+    const meta = images[i];
+    if (!meta?.file_path || !isSafeStoragePath(meta.file_path, storageBase)) continue;
+
+    let embedded;
+    try {
+      embedded = await embedImageFromFile(pdfDoc, meta.file_path);
+    } catch (err) {
+      logger.warn(`[PDF Generator] Cannot embed image ${meta.file_path}: ${err.message}`);
+      continue;
+    }
+
+    const row = Math.floor(i / cols);
+    const col = i % cols;
+    const cellX = field.x + col * (cellWidth + gap);
+    const cellTopY = field.y + row * (cellHeight + gap);
+
+    const scale = Math.min(cellWidth / embedded.width, cellHeight / embedded.height);
+    const drawWidth = embedded.width * scale;
+    const drawHeight = embedded.height * scale;
+    const offsetX = (cellWidth - drawWidth) / 2;
+    const offsetY = (cellHeight - drawHeight) / 2;
+
+    page.drawImage(embedded, {
+      x: cellX + offsetX,
+      y: pageHeight - (cellTopY + offsetY + drawHeight),
+      width: drawWidth,
+      height: drawHeight,
+    });
+  }
+}
+
+/**
+ * ตรวจสอบว่า path ของไฟล์รูปภาพอยู่ภายใน storage base (ป้องกัน path traversal)
+ */
+function isSafeStoragePath(filePath, storageBase) {
+  if (!filePath || !storageBase) return false;
+  return path.resolve(filePath).startsWith(path.resolve(storageBase));
+}
+
+/**
  * สร้าง PDF จาก template และ record
  * @param {Object} record - ข้อมูล record (daily report / procurement / acceptance)
  * @param {Object} template - ReportTemplate document
@@ -219,6 +303,14 @@ async function generatePdf(record, template, project, storageBase) {
 
     // วาง field ทั้งหมด
     for (const field of pageTemplate.fields) {
+      if (field.type === 'image') {
+        const images = getImageList(context, field.fieldId, template.module);
+        if (images.length > 0) {
+          await drawImageGrid(pdfDoc, page, field, images, pageHeight, storageBase);
+        }
+        continue;
+      }
+
       const text = field.fieldId === 'static_text'
         ? (field.customText || '')
         : getFieldValue(context, field.fieldId, template.module);

@@ -8,6 +8,7 @@ const mongoose = require('mongoose');
 const fieldSchema = new mongoose.Schema(
   {
     fieldId: { type: String, required: true, trim: true },
+    type: { type: String, enum: ['text', 'image'], default: 'text' },
     x: { type: Number, required: true },
     y: { type: Number, required: true },
     width: { type: Number, default: 200 },
@@ -16,8 +17,12 @@ const fieldSchema = new mongoose.Schema(
     fontFamily: { type: String, default: 'THSarabunNew' },
     color: { type: String, default: '#000000' },
     textAlign: { type: String, enum: ['left', 'center', 'right'], default: 'left' },
+    // สำหรับ field ประเภทรูปภาพ (แกลเลอรี): จำนวนแถว/คอลัมน์ของกริดรูปภาพ และระยะห่างระหว่างรูป (pt)
+    gridRows: { type: Number, default: 1, min: 1, max: 6 },
+    gridCols: { type: Number, default: 1, min: 1, max: 6 },
+    gap: { type: Number, default: 4, min: 0 },
   },
-  { _id: false }
+  { _id: false, strict: false }
 );
 
 const pageSchema = new mongoose.Schema(

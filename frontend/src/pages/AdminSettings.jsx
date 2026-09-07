@@ -47,8 +47,8 @@ function TabGeneral() {
       .then(({ data }) => {
         const s = data.data || {};
         setHours(String(s.public_duration_hours ?? 24));
-        setMaxDocMB(String(s.max_doc_size_mb ?? 50));
-        setMaxImgMB(String(s.max_img_size_mb ?? 3));
+        setMaxDocMB(String(s.max_doc_size_mb ?? 10));
+        setMaxImgMB(String(s.max_img_size_mb ?? 5));
       })
       .catch(() => toast.error('โหลดการตั้งค่าไม่สำเร็จ'))
       .finally(() => setLoading(false));
@@ -98,7 +98,7 @@ function TabGeneral() {
               className="w-28 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
             <span className="text-sm text-gray-500">ชั่วโมง</span>
             {hours && !isNaN(parseInt(hours)) && parseInt(hours) >= 24 && (
-              <span className="text-xs text-gray-400">({Math.floor(parseInt(hours)/24)} วัน{parseInt(hours)%24 > 0 ? ` ${parseInt(hours)%24} ชม.` : ''})</span>
+              <span className="text-xs text-gray-400">({Math.floor(parseInt(hours) / 24)} วัน{parseInt(hours) % 24 > 0 ? ` ${parseInt(hours) % 24} ชม.` : ''})</span>
             )}
           </div>
         </div>
@@ -117,16 +117,17 @@ function TabGeneral() {
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">รูปภาพ สูงสุด</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">รูปภาพ สูงสุด (ต่อรูป)</label>
             <div className="flex items-center gap-2">
               <input type="number" min={1} max={20} value={maxImgMB}
                 onChange={(e) => setMaxImgMB(e.target.value)}
                 className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
               <span className="text-sm text-gray-500">MB</span>
             </div>
+            <p className="text-xs text-gray-400 mt-1">ระบบจะลดขนาดรูปภาพให้ไม่เกิน 1080p โดยอัตโนมัติก่อนจัดเก็บ</p>
           </div>
         </div>
-        </div>
+      </div>
       <button type="submit" disabled={saving}
         className="bg-primary text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-primary-dark transition disabled:opacity-60">
         {saving ? 'กำลังบันทึก...' : 'บันทึกการตั้งค่า'}
@@ -592,11 +593,10 @@ export default function AdminSettings() {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap ${
-              activeTab === tab.id
-                ? 'bg-white shadow text-primary'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap ${activeTab === tab.id
+              ? 'bg-white shadow text-primary'
+              : 'text-gray-600 hover:text-gray-800'
+              }`}
           >
             <span>{tab.icon}</span>{tab.label}
           </button>

@@ -75,6 +75,22 @@ const FIELD_CATALOG = {
   ],
 };
 
+const IMAGE_FIELD_CATALOG = {
+  daily_report: [
+    { id: 'report.photos', label: 'ภาพถ่ายการปฏิบัติงาน (แกลเลอรี)' },
+    { id: 'report.equipmentPhotos', label: 'ภาพถ่ายครุภัณฑ์ (แกลเลอรี)' },
+  ],
+  procurement: [
+    { id: 'procurement.receivePhotos', label: 'ภาพถ่ายตอนรับพัสดุ (แกลเลอรี)' },
+    { id: 'procurement.inspectionPhotos', label: 'ภาพถ่ายตรวจสอบ (แกลเลอรี)' },
+  ],
+  acceptance: [
+    { id: 'acceptance.inspectionPhotos', label: 'ภาพถ่ายตรวจรับงาน (แกลเลอรี)' },
+  ],
+};
+
+const GRID_LAYOUT_PRESETS = ['1x1', '1x2', '2x1', '2x2', '2x3', '3x2', '3x3'];
+
 export default function TemplateDesigner() {
   const { projectId, templateId } = useParams();
   const navigate = useNavigate();
@@ -110,6 +126,8 @@ export default function TemplateDesigner() {
 
   const currentPage = template?.pages?.[currentPageIndex];
   const fields = FIELD_CATALOG[template?.module] || [];
+  const imageFields = IMAGE_FIELD_CATALOG[template?.module] || [];
+  const allFieldDefs = [...fields, ...imageFields];
 
   const canvasWidth = template ? PAPER_SIZES[currentPage?.paperSize || 'A4'][currentPage?.orientation || 'portrait'][0] : 595;
   const canvasHeight = template ? PAPER_SIZES[currentPage?.paperSize || 'A4'][currentPage?.orientation || 'portrait'][1] : 842;
@@ -128,6 +146,34 @@ export default function TemplateDesigner() {
       fontFamily: 'THSarabunNew',
       color: '#000000',
       textAlign: 'left',
+    };
+
+    const updatedPages = template.pages.map((page, idx) => {
+      if (idx !== currentPageIndex) return page;
+      return {
+        ...page,
+        fields: [...(page.fields || []), newField],
+      };
+    });
+
+    setTemplate({ ...template, pages: updatedPages });
+    setSelectedFieldIndex(currentFields.length);
+  };
+
+  const handleAddImageField = (fieldId) => {
+    if (!template || !currentPage) return;
+
+    const currentFields = currentPage.fields || [];
+    const newField = {
+      fieldId,
+      type: 'image',
+      x: 50,
+      y: 50 + currentFields.length * 25,
+      width: 240,
+      height: 180,
+      gridRows: 1,
+      gridCols: 1,
+      gap: 4,
     };
 
     const updatedPages = template.pages.map((page, idx) => {
@@ -228,7 +274,7 @@ export default function TemplateDesigner() {
 
         const { data } = await api.get(endpoint);
         const records = Array.isArray(data.data) ? data.data : (data.data?.items || []);
-        
+
         if (!records || records.length === 0) {
           toast.error('ไม่พบข้อมูลจริงในระบบสำหรับโครงการนี้ กรุณาสร้างข้อมูลจริงก่อนเลือกดูตัวอย่าง');
           return;
@@ -557,7 +603,7 @@ export default function TemplateDesigner() {
             <div className="bg-white rounded-xl shadow p-4 h-full flex flex-col">
               <h3 className="font-bold text-gray-800 mb-2 flex-none">Field Palette</h3>
               <p className="text-xs text-gray-500 mb-4">เลือกข้อมูลที่ต้องการจากดรอปดาวน์หรือปุ่มเครื่องมือด้านล่างเพื่อเพิ่มลงในรายงานหลัก</p>
-              
+
               <button
                 onClick={() => handleAddField('static_text')}
                 className="w-full bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 hover:border-primary/40 rounded-lg p-2.5 text-sm font-semibold transition flex items-center justify-center gap-2 mb-4 shadow-sm"
@@ -586,6 +632,26 @@ export default function TemplateDesigner() {
                     </option>
                   ))}
                 </select>
+
+                {imageFields.length > 0 && (
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleAddImageField(e.target.value);
+                        e.target.value = ""; // Reset dropdown
+                      }
+                    }}
+                    className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition shadow-sm cursor-pointer"
+                    defaultValue=""
+                  >
+                    <option value="" disabled>-- เพิ่มรูปภาพ (แกลเลอรี) --</option>
+                    {imageFields.map((field) => (
+                      <option key={field.id} value={field.id}>
+                        {field.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               {/* Decorative placeholder to make sidebar look premium */}
@@ -660,7 +726,9 @@ export default function TemplateDesigner() {
                         <div className="px-1 truncate text-gray-700 w-full h-full pointer-events-none">
                           {field.fieldId === 'static_text'
                             ? (field.customText || '[กล่องข้อความอิสระ]')
-                            : (fields.find((f) => f.id === field.fieldId)?.label || field.fieldId)}
+                            : field.type === 'image'
+                              ? `🖼 ${allFieldDefs.find((f) => f.id === field.fieldId)?.label || field.fieldId} (${field.gridRows || 1}x${field.gridCols || 1})`
+                              : (allFieldDefs.find((f) => f.id === field.fieldId)?.label || field.fieldId)}
                         </div>
                         {selectedFieldIndex === index && (
                           <div
@@ -669,7 +737,7 @@ export default function TemplateDesigner() {
                             style={{ zIndex: 10, touchAction: 'none' }}
                           >
                             <svg width="6" height="6" viewBox="0 0 6 6" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <path d="M6 6H0M6 3H3M6 0H6" stroke="white" strokeWidth="1" strokeLinecap="round"/>
+                              <path d="M6 6H0M6 3H3M6 0H6" stroke="white" strokeWidth="1" strokeLinecap="round" />
                             </svg>
                           </div>
                         )}
@@ -694,7 +762,7 @@ export default function TemplateDesigner() {
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">Field</label>
                           <p className="text-sm font-medium">
-                            {field.fieldId === 'static_text' ? 'กล่องข้อความอิสระ' : (fields.find((f) => f.id === field.fieldId)?.label || field.fieldId)}
+                            {field.fieldId === 'static_text' ? 'กล่องข้อความอิสระ' : (allFieldDefs.find((f) => f.id === field.fieldId)?.label || field.fieldId)}
                           </p>
                         </div>
                         {field.fieldId === 'static_text' && (
@@ -759,42 +827,107 @@ export default function TemplateDesigner() {
                             />
                           </div>
                         </div>
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">Font Size</label>
-                          <input
-                            type="number"
-                            value={field.fontSize}
-                            onChange={(e) =>
-                              handleFieldChange(selectedFieldIndex, 'fontSize', Number(e.target.value))
-                            }
-                            className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">Text Align</label>
-                          <select
-                            value={field.textAlign}
-                            onChange={(e) =>
-                              handleFieldChange(selectedFieldIndex, 'textAlign', e.target.value)
-                            }
-                            className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
-                          >
-                            <option value="left">Left</option>
-                            <option value="center">Center</option>
-                            <option value="right">Right</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">Color</label>
-                          <input
-                            type="color"
-                            value={field.color}
-                            onChange={(e) =>
-                              handleFieldChange(selectedFieldIndex, 'color', e.target.value)
-                            }
-                            className="w-full h-8 border border-gray-300 rounded"
-                          />
-                        </div>
+                        {field.type === 'image' ? (
+                          <>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">รูปแบบเค้าโครง (แถว x คอลัมน์)</label>
+                              <select
+                                value={GRID_LAYOUT_PRESETS.includes(`${field.gridRows || 1}x${field.gridCols || 1}`) ? `${field.gridRows || 1}x${field.gridCols || 1}` : 'custom'}
+                                onChange={(e) => {
+                                  if (e.target.value === 'custom') return;
+                                  const [r, c] = e.target.value.split('x').map(Number);
+                                  handleFieldChange(selectedFieldIndex, 'gridRows', r);
+                                  handleFieldChange(selectedFieldIndex, 'gridCols', c);
+                                }}
+                                className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                              >
+                                {GRID_LAYOUT_PRESETS.map((v) => (
+                                  <option key={v} value={v}>{v.replace('x', ' x ')}</option>
+                                ))}
+                                <option value="custom">กำหนดเอง</option>
+                              </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-xs text-gray-500 mb-1">แถว</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="6"
+                                  value={field.gridRows || 1}
+                                  onChange={(e) =>
+                                    handleFieldChange(selectedFieldIndex, 'gridRows', Math.max(1, Number(e.target.value)))
+                                  }
+                                  className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-gray-500 mb-1">คอลัมน์</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="6"
+                                  value={field.gridCols || 1}
+                                  onChange={(e) =>
+                                    handleFieldChange(selectedFieldIndex, 'gridCols', Math.max(1, Number(e.target.value)))
+                                  }
+                                  className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">ระยะห่างระหว่างรูป (pt)</label>
+                              <input
+                                type="number"
+                                min="0"
+                                value={field.gap ?? 4}
+                                onChange={(e) =>
+                                  handleFieldChange(selectedFieldIndex, 'gap', Math.max(0, Number(e.target.value)))
+                                }
+                                className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                              />
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Font Size</label>
+                              <input
+                                type="number"
+                                value={field.fontSize}
+                                onChange={(e) =>
+                                  handleFieldChange(selectedFieldIndex, 'fontSize', Number(e.target.value))
+                                }
+                                className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Text Align</label>
+                              <select
+                                value={field.textAlign}
+                                onChange={(e) =>
+                                  handleFieldChange(selectedFieldIndex, 'textAlign', e.target.value)
+                                }
+                                className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                              >
+                                <option value="left">Left</option>
+                                <option value="center">Center</option>
+                                <option value="right">Right</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Color</label>
+                              <input
+                                type="color"
+                                value={field.color}
+                                onChange={(e) =>
+                                  handleFieldChange(selectedFieldIndex, 'color', e.target.value)
+                                }
+                                className="w-full h-8 border border-gray-300 rounded"
+                              />
+                            </div>
+                          </>
+                        )}
                         <button
                           onClick={() => handleDeleteField(selectedFieldIndex)}
                           className="w-full text-sm text-red-500 border border-red-200 rounded px-3 py-2 hover:bg-red-50"

@@ -8,6 +8,14 @@ const { generatePdf } = require('../../utils/pdfGenerator');
 const logger = require('../../utils/logger');
 const config = require('../../config');
 
+// file_path ของรูปภาพถูกกำหนด select:false ในสกีมา ต้องระบุ select เพิ่มเพื่อดึงมาใช้วาดใน PDF
+const PHOTO_SELECT_BY_MODULE = {
+  daily_report: '+photos.file_path +equipment_items.photo.file_path',
+  procurement: '+receive_photos.file_path +inspection_photos.file_path',
+  acceptance: '+inspection_photos.file_path',
+};
+
+
 /**
  * GET /api/projects/:projectId/reports/:module/:recordId/templates
  * ดึง template ที่ active และตรงกับ module
@@ -75,7 +83,7 @@ async function generateReport(req, res) {
         return sendError(res, 400, 'Module ไม่ถูกต้อง');
     }
 
-    record = await Model.findById(recordId).lean();
+    record = await Model.findById(recordId).select(PHOTO_SELECT_BY_MODULE[module] || '').lean();
     if (!record) {
       return sendError(res, 404, 'ไม่พบข้อมูล record');
     }

@@ -3,10 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const config = require('../../config');
-const logger = require('../../utils/logger');
-
-// ขีดจำกัดขนาดไฟล์รูปภาพโครงการ (อนุญาตไฟล์ใหญ่ เพราะ backend จะ resize)
-const PROJECT_IMG_MAX_MB = 20;
+const { resizeImageFile } = require('../../utils/imageResize');
 
 const ALLOWED_IMG_MIMES = config.storage.allowedImgMimes;
 const ALLOWED_IMG_EXTS = ['.jpg', '.jpeg', '.png', '.webp'];
@@ -41,7 +38,7 @@ const imgFileFilter = (req, file, cb) => {
 function uploadDailyReportFiles(req, res, cb) {
   const instance = multer({
     storage: projectImgStorage,
-    limits: { fileSize: PROJECT_IMG_MAX_MB * 1024 * 1024 },
+    limits: { fileSize: config.storage.maxImgSizeMB * 1024 * 1024 },
     fileFilter: imgFileFilter,
   }).fields([
     { name: 'photos', maxCount: 6 },
@@ -57,7 +54,7 @@ function uploadDailyReportFiles(req, res, cb) {
 function uploadProcurementPhotos(req, res, cb) {
   const instance = multer({
     storage: projectImgStorage,
-    limits: { fileSize: PROJECT_IMG_MAX_MB * 1024 * 1024 },
+    limits: { fileSize: config.storage.maxImgSizeMB * 1024 * 1024 },
     fileFilter: imgFileFilter,
   }).fields([
     { name: 'receive_photos', maxCount: 30 },
@@ -75,14 +72,18 @@ const ALLOWED_DOC_MIMES = [
 ];
 const ALLOWED_DOC_EXTS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx'];
 
+// เอกสารส่งมอบงาน (delivery_doc) มักเป็นไฟล์สแกนหลายหน้า จึงกำหนดขีดจำกัดแยกจาก maxDocSizeMB ทั่วไป
+const DELIVERY_DOC_MAX_MB = 100;
+
 /**
  * สร้าง multer instance สำหรับ acceptance
- * fields: inspection_photos (ไม่จำกัด), delivery_doc (PDF/Word 1 ไฟล์)
+ * fields: inspection_photos (รูปภาพ, จำกัดแยกที่ maxImgSizeMB), delivery_doc (PDF/Word 1 ไฟล์, จำกัดแยกที่ DELIVERY_DOC_MAX_MB)
  */
 function uploadAcceptancePhotos(req, res, cb) {
+  // multer รองรับ limit เดียวสำหรับทั้ง instance จึงต้องใช้ค่าสูงสุดก่อน แล้วตรวจสอบแยกตามชนิดไฟล์ทีหลัง
   const instance = multer({
     storage: projectImgStorage,
-    limits: { fileSize: Math.max(PROJECT_IMG_MAX_MB, config.storage.maxDocSizeMB) * 1024 * 1024 },
+    limits: { fileSize: Math.max(config.storage.maxImgSizeMB, DELIVERY_DOC_MAX_MB) * 1024 * 1024 },
     fileFilter: (req, file, next) => {
       const ext = path.extname(file.originalname).toLowerCase();
       if (file.fieldname === 'delivery_doc') {
@@ -101,7 +102,23 @@ function uploadAcceptancePhotos(req, res, cb) {
     { name: 'inspection_photos', maxCount: 50 },
     { name: 'delivery_doc', maxCount: 1 },
   ]);
-  instance(req, res, cb);
+  instance(req, res, (err) => {
+    if (err) return cb(err);
+    // ตรวจสอบขนาดแยกตามชนิดไฟล์ (รูปภาพ ≤ maxImgSizeMB, delivery_doc ≤ DELIVERY_DOC_MAX_MB)
+    const files = req.files || {};
+    const imgLimitBytes = config.storage.maxImgSizeMB * 1024 * 1024;
+    const docLimitBytes = DELIVERY_DOC_MAX_MB * 1024 * 1024;
+    const oversizedImg = (files.inspection_photos || []).find((f) => f.size > imgLimitBytes);
+    const oversizedDoc = (files.delivery_doc || []).find((f) => f.size > docLimitBytes);
+    if (oversizedImg || oversizedDoc) {
+      cleanupTmpFiles(files);
+      const msg = oversizedDoc
+        ? `delivery_doc ใหญ่เกินกำหนด (สูงสุด ${DELIVERY_DOC_MAX_MB} MB)`
+        : `รูปภาพใหญ่เกินกำหนด (สูงสุด ${config.storage.maxImgSizeMB} MB ต่อรูป)`;
+      return cb(new multer.MulterError('LIMIT_FILE_SIZE', msg));
+    }
+    cb();
+  });
 }
 
 /**
@@ -110,9 +127,10 @@ function uploadAcceptancePhotos(req, res, cb) {
 function handleProjectMulterError(err, req, res, next) {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
+      // err.field เก็บข้อความ custom จากการตรวจสอบขนาดแยกชนิดไฟล์ (ถ้ามี)
       return res.status(413).json({
         success: false,
-        message: `ไฟล์ใหญ่เกินกำหนด (สูงสุด ${config.storage.maxImgSizeMB} MB)`,
+        message: err.field || `ไฟล์ใหญ่เกินกำหนด (สูงสุด ${config.storage.maxImgSizeMB} MB)`,
       });
     }
     if (err.code === 'LIMIT_FILE_COUNT') {
@@ -176,26 +194,6 @@ function cleanupTmpFiles(files) {
   allFiles.forEach((f) => {
     try { fs.unlinkSync(f.path); } catch { /* ignore */ }
   });
-}
-
-/**
- * Resize รูปภาพไฟล์เดียว in-place ด้วย sharp
- * Max: 1280×720 (HD), JPEG quality 80 → ~< 500 KB
- */
-async function resizeImageFile(filePath) {
-  try {
-    const sharp = require('sharp');
-    const resized = await sharp(filePath)
-      .rotate()
-      .resize({ width: 1280, height: 720, fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 80, progressive: true })
-      .toBuffer();
-    fs.writeFileSync(filePath, resized);
-    return { size: resized.length, mime_type: 'image/jpeg' };
-  } catch (err) {
-    logger.warn('[Upload] resizeImageFile error:', filePath, err.message);
-    return null;
-  }
 }
 
 /**

@@ -11,6 +11,7 @@ const SystemSettings = require('../../models/SystemSettings');
 const { logAction, getIp } = require('../../utils/auditHelper');
 const { sendSuccess, sendError } = require('../../utils/response');
 const { buildStoragePath } = require('./document.upload');
+const { resizeImageFile } = require('../../utils/imageResize');
 const logger = require('../../utils/logger');
 
 /**
@@ -191,7 +192,7 @@ async function updateDocument(req, res) {
     // ตรวจสิทธิ์: owner, staff (ในหน่วยงานเดียวกัน), หรือ admin+
     const userRole = req.user.role;
     const isSameDept = req.user?.deptId && String(doc.dept_id) === String(req.user.deptId);
-    
+
     if (!['superadmin', 'admin'].includes(userRole)) {
       // staff แก้ไขได้ทุกเอกสารในหน่วยงานตัวเอง
       if (userRole === 'staff' && !isSameDept) {
@@ -258,7 +259,7 @@ async function deleteDocument(req, res) {
     // ตรวจสิทธิ์: owner, staff (ในหน่วยงานเดียวกัน), หรือ admin+
     const userRole = req.user.role;
     const isSameDept = req.user?.deptId && String(doc.dept_id) === String(req.user.deptId);
-    
+
     if (!['superadmin', 'admin'].includes(userRole)) {
       // staff ลบได้ทุกเอกสารในหน่วยงานตัวเอง
       if (userRole === 'staff' && !isSameDept) {
@@ -355,7 +356,7 @@ async function uploadAttachment(req, res) {
 
     return sendSuccess(res, added, 'อัปโหลดไฟล์แนบเรียบร้อย');
   } catch (err) {
-    if (req.file?.path) fs.unlink(req.file.path, () => {});
+    if (req.file?.path) fs.unlink(req.file.path, () => { });
     logger.error('[Document] uploadAttachment error:', err.message);
     return sendError(res, 500, 'เกิดข้อผิดพลาด');
   }
@@ -478,7 +479,7 @@ async function deleteAttachment(req, res) {
 
     const userRole = req.user.role;
     const isSameDept = req.user?.deptId && String(doc.dept_id) === String(req.user.deptId);
-    
+
     if (!['superadmin', 'admin'].includes(userRole)) {
       // staff ลบไฟล์แนบได้ในเอกสารของหน่วยงานตัวเอง
       if (userRole === 'staff' && !isSameDept) {
@@ -535,7 +536,7 @@ async function renameAttachment(req, res) {
 
     const userRole = req.user.role;
     const isSameDept = req.user?.deptId && String(doc.dept_id) === String(req.user.deptId);
-    
+
     if (!['superadmin', 'admin'].includes(userRole)) {
       // staff แก้ไขไฟล์แนบได้ในเอกสารของหน่วยงานตัวเอง
       if (userRole === 'staff' && !isSameDept) {
@@ -589,10 +590,13 @@ async function uploadImage(req, res) {
     const destPath = path.join(dirPath, newFilename);
     fs.renameSync(req.file.path, destPath);
 
+    // ลดขนาดรูปภาพก่อนจัดเก็บถาวร (ไม่เกิน 1080p)
+    const resized = await resizeImageFile(destPath);
+
     doc.images.push({
       file_path: destPath,
-      file_size: req.file.size,
-      mime_type: req.file.mimetype,
+      file_size: resized ? resized.size : req.file.size,
+      mime_type: resized ? resized.mime_type : req.file.mimetype,
       original_name: req.file.originalname,
       uploaded_by: doc.created_by,
     });
@@ -614,7 +618,7 @@ async function uploadImage(req, res) {
 
     return sendSuccess(res, added, 'อัปโหลดรูปภาพเรียบร้อย');
   } catch (err) {
-    if (req.file?.path) fs.unlink(req.file.path, () => {});
+    if (req.file?.path) fs.unlink(req.file.path, () => { });
     logger.error('[Document] uploadImage error:', err.message);
     return sendError(res, 500, 'เกิดข้อผิดพลาด');
   }
