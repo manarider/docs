@@ -35,7 +35,7 @@ export default function ProjectReportManager() {
   const { projectId } = useParams();
   const { project, isInternal, canManageKeys } = useOutletContext();
   const canManageTemplates = isInternal && canManageKeys;
-  
+
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -64,6 +64,22 @@ export default function ProjectReportManager() {
       loadTemplates();
     } catch (err) {
       toast.error('ปรับปรุงสถานะไม่สำเร็จ');
+    }
+  };
+
+  const handleToggleScope = async (templateId, currentScope) => {
+    const newScope = currentScope === 'global' ? 'project' : 'global';
+    const confirmMsg =
+      newScope === 'global'
+        ? 'แปลง template นี้เป็น Global เพื่อให้ทุกโครงการใช้งานร่วมกันหรือไม่?'
+        : 'แปลง template นี้กลับเป็นของโครงการนี้เท่านั้นหรือไม่?';
+    if (!window.confirm(confirmMsg)) return;
+    try {
+      await api.put(`/projects/${projectId}/report-templates/${templateId}`, { scope: newScope });
+      toast.success(newScope === 'global' ? 'แปลงเป็น Global แล้ว' : 'แปลงเป็นของโครงการนี้แล้ว');
+      loadTemplates();
+    } catch (err) {
+      toast.error('ปรับปรุง scope ไม่สำเร็จ');
     }
   };
 
@@ -146,11 +162,10 @@ export default function ProjectReportManager() {
                         <div className="flex items-center gap-2">
                           <h4 className="font-semibold text-gray-800">{tpl.name}</h4>
                           <span
-                            className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                              tpl.status === 'active'
+                            className={`text-xs px-2 py-0.5 rounded-full font-medium ${tpl.status === 'active'
                                 ? 'bg-green-100 text-green-700'
                                 : 'bg-gray-100 text-gray-500'
-                            }`}
+                              }`}
                           >
                             {tpl.status === 'active' ? 'ใช้งาน' : 'ปิด'}
                           </span>
@@ -162,28 +177,38 @@ export default function ProjectReportManager() {
                         </div>
                       </div>
                       {canManageTemplates && (
-                      <div className="flex items-center gap-3">
-                        {canManageTemplates && (
-                          <button
-                            onClick={() => handleToggleStatus(tpl._id, tpl.status)}
-                            className={`text-xs border px-2.5 py-1.5 rounded transition font-semibold shadow-sm ${
-                              tpl.status === 'active'
-                                ? 'border-red-200 text-red-600 hover:bg-red-50'
-                                : 'border-green-200 text-green-600 hover:bg-green-50'
-                            }`}
-                          >
-                            {tpl.status === 'active' ? 'ปิดการใช้งาน' : 'เปิดการใช้งาน'}
-                          </button>
-                        )}
-                        {canManageTemplates && (
-                          <Link
-                            to={`/projects/${projectId}/report-manager/${tpl._id}/designer`}
-                            className="text-sm text-primary hover:underline font-semibold bg-gray-50 border border-gray-200 rounded px-2.5 py-1.5 hover:bg-gray-100 transition shadow-sm"
-                          >
-                            แก้ไข Designer
-                          </Link>
-                        )}
-                      </div>
+                        <div className="flex items-center gap-3">
+                          {canManageTemplates && (
+                            <button
+                              onClick={() => handleToggleScope(tpl._id, tpl.scope)}
+                              className={`text-xs border px-2.5 py-1.5 rounded transition font-semibold shadow-sm ${tpl.scope === 'global'
+                                  ? 'border-amber-200 text-amber-600 hover:bg-amber-50'
+                                  : 'border-blue-200 text-blue-600 hover:bg-blue-50'
+                                }`}
+                            >
+                              {tpl.scope === 'global' ? 'ยกเลิก Global' : 'แปลงเป็น Global'}
+                            </button>
+                          )}
+                          {canManageTemplates && (
+                            <button
+                              onClick={() => handleToggleStatus(tpl._id, tpl.status)}
+                              className={`text-xs border px-2.5 py-1.5 rounded transition font-semibold shadow-sm ${tpl.status === 'active'
+                                  ? 'border-red-200 text-red-600 hover:bg-red-50'
+                                  : 'border-green-200 text-green-600 hover:bg-green-50'
+                                }`}
+                            >
+                              {tpl.status === 'active' ? 'ปิดการใช้งาน' : 'เปิดการใช้งาน'}
+                            </button>
+                          )}
+                          {canManageTemplates && (
+                            <Link
+                              to={`/projects/${projectId}/report-manager/${tpl._id}/designer`}
+                              className="text-sm text-primary hover:underline font-semibold bg-gray-50 border border-gray-200 rounded px-2.5 py-1.5 hover:bg-gray-100 transition shadow-sm"
+                            >
+                              แก้ไข Designer
+                            </Link>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>

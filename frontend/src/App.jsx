@@ -28,6 +28,9 @@ import ProjectKeyManager from './pages/ProjectKeyManager';
 import EquipmentSearch from './pages/EquipmentSearch';
 import ProjectReportManager from './pages/ProjectReportManager';
 import TemplateDesigner from './pages/TemplateDesigner';
+import OutsourcedGroups from './pages/OutsourcedGroups';
+import OutsourcedForms from './pages/OutsourcedForms';
+import OutsourcedReports from './pages/OutsourcedReports';
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -70,20 +73,35 @@ function AppRoutes() {
         <>
           <Route path="/auth-callback" element={<AuthCallbackPage />} />
           <Route path="/" element={<Layout />}>
-            <Route index element={<Home />} />
-            <Route path="documents" element={<Documents />} />
-            <Route path="documents/new" element={<DocumentNew />} />
-            <Route path="documents/:id" element={<DocumentDetail />} />
-            <Route path="documents/:id/edit" element={<DocumentEdit />} />
-            <Route path="search" element={<Search />} />
-            <Route path="reports" element={<Reports />} />
-            <Route path="equipment-search" element={<EquipmentSearch />} />
-            <Route path="admin/departments" element={<AdminDepartments />} />
-            <Route path="admin/doctypes" element={<AdminDocTypes />} />
-            <Route path="admin/audit" element={<AdminAuditLog />} />
-            <Route path="admin/trash" element={<AdminTrash />} />
-            <Route path="admin/settings" element={<AdminSettings />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            {user.role === 'outsourced' ? (
+              <>
+                <Route index element={<Navigate to="/outsourced" replace />} />
+                <Route path="outsourced" element={<OutsourcedGroups />} />
+                <Route path="outsourced/groups/:groupId/forms" element={<OutsourcedForms />} />
+                <Route path="outsourced/groups/:groupId/reports" element={<OutsourcedReports />} />
+                <Route path="*" element={<Navigate to="/outsourced" replace />} />
+              </>
+            ) : (
+              <>
+                <Route index element={<Home />} />
+                <Route path="documents" element={<Documents />} />
+                <Route path="documents/new" element={<DocumentNew />} />
+                <Route path="documents/:id" element={<DocumentDetail />} />
+                <Route path="documents/:id/edit" element={<DocumentEdit />} />
+                <Route path="search" element={<Search />} />
+                <Route path="reports" element={<Reports />} />
+                <Route path="equipment-search" element={<EquipmentSearch />} />
+                <Route path="admin/departments" element={<AdminDepartments />} />
+                <Route path="admin/doctypes" element={<AdminDocTypes />} />
+                <Route path="admin/audit" element={<AdminAuditLog />} />
+                <Route path="admin/trash" element={<AdminTrash />} />
+                <Route path="admin/settings" element={<AdminSettings />} />
+                <Route path="outsourced" element={<OutsourcedGroups />} />
+                <Route path="outsourced/groups/:groupId/forms" element={<OutsourcedForms />} />
+                <Route path="outsourced/groups/:groupId/reports" element={<OutsourcedReports />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </>
+            )}
           </Route>
         </>
       )}

@@ -113,8 +113,8 @@ async function createTemplate(req, res) {
  */
 async function updateTemplate(req, res) {
   try {
-    const { templateId } = req.params;
-    const { name, status, pages } = req.body;
+    const { projectId, templateId } = req.params;
+    const { name, status, pages, scope } = req.body;
 
     const template = await ReportTemplate.findById(templateId);
     if (!template) {
@@ -124,6 +124,11 @@ async function updateTemplate(req, res) {
     if (name) template.name = name;
     if (status) template.status = status;
     if (pages) template.pages = pages;
+    // scope: 'global' ใช้ได้ทุกโครงการ (ไม่ผูก project_id), 'project' ผูกกับโครงการปัจจุบันเท่านั้น
+    if (scope === 'global' || scope === 'project') {
+      template.scope = scope;
+      template.project_id = scope === 'global' ? null : projectId;
+    }
     template.updated_by = req.projectUser.userId;
 
     await template.save();

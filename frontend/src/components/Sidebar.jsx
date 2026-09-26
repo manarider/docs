@@ -15,6 +15,8 @@ const adminItems = [
   { to: '/admin/settings', label: 'ตั้งค่าระบบ', icon: '⚙️' },
 ];
 
+const outsourcedItem = { to: '/outsourced', label: 'Outsourced', icon: '🧑‍🔧' };
+
 const ROLE_LEVEL = { superadmin: 50, admin: 40, manager: 30, staff: 25, member: 20, viewer: 10 };
 
 function NavItem({ to, icon, label, end, onClick }) {
@@ -24,10 +26,9 @@ function NavItem({ to, icon, label, end, onClick }) {
       end={end}
       onClick={onClick}
       className={({ isActive }) =>
-        `flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm transition ${
-          isActive
-            ? 'bg-primary text-white font-medium'
-            : 'text-gray-700 hover:bg-orange-50 hover:text-primary'
+        `flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm transition ${isActive
+          ? 'bg-primary text-white font-medium'
+          : 'text-gray-700 hover:bg-orange-50 hover:text-primary'
         }`
       }
     >
@@ -41,21 +42,31 @@ export default function Sidebar({ open, onClose }) {
   const { user } = useAuth();
   const userLevel = ROLE_LEVEL[user?.role] || 0;
   const isAdmin = userLevel >= ROLE_LEVEL.admin;
+  const isStaffUp = userLevel >= ROLE_LEVEL.staff;
+  const isOutsourcedOnly = user?.role === 'outsourced';
 
   const sidebarContent = (
     <>
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-        {navItems.map((item) => (
-          <NavItem key={item.to} {...item} end={item.to === '/'} onClick={onClose} />
-        ))}
-
-        {isAdmin && (
+        {isOutsourcedOnly ? (
+          <NavItem {...outsourcedItem} onClick={onClose} />
+        ) : (
           <>
-            <hr className="my-3 border-gray-100" />
-            <p className="text-xs text-gray-400 px-3 mb-2 font-medium uppercase tracking-wider">จัดการ</p>
-            {adminItems.map((item) => (
-              <NavItem key={item.to} {...item} onClick={onClose} />
+            {navItems.map((item) => (
+              <NavItem key={item.to} {...item} end={item.to === '/'} onClick={onClose} />
             ))}
+
+            {isStaffUp && <NavItem {...outsourcedItem} onClick={onClose} />}
+
+            {isAdmin && (
+              <>
+                <hr className="my-3 border-gray-100" />
+                <p className="text-xs text-gray-400 px-3 mb-2 font-medium uppercase tracking-wider">จัดการ</p>
+                {adminItems.map((item) => (
+                  <NavItem key={item.to} {...item} onClick={onClose} />
+                ))}
+              </>
+            )}
           </>
         )}
       </nav>
@@ -79,9 +90,8 @@ export default function Sidebar({ open, onClose }) {
 
       {/* Mobile drawer — slides in from left */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex flex-col w-64 bg-white shadow-xl transform transition-transform duration-300 ease-in-out lg:hidden ${
-          open ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed inset-y-0 left-0 z-40 flex flex-col w-64 bg-white shadow-xl transform transition-transform duration-300 ease-in-out lg:hidden ${open ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
         {/* Drawer header with close button */}
         <div className="flex items-center justify-between px-4 py-3 bg-primary">

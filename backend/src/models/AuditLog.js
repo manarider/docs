@@ -25,7 +25,7 @@ const auditLogSchema = new mongoose.Schema(
     module: {
       type: String,
       required: true,
-      enum: ['AUTH', 'DOCUMENT', 'DEPARTMENT', 'DOCTYPE', 'ADMIN', 'REPORT', 'PROJECT', 'DAILY_REPORT', 'PROCUREMENT', 'WORK_ACCEPTANCE'],
+      enum: ['AUTH', 'DOCUMENT', 'DEPARTMENT', 'DOCTYPE', 'ADMIN', 'REPORT', 'PROJECT', 'DAILY_REPORT', 'PROCUREMENT', 'WORK_ACCEPTANCE', 'OUTSOURCED'],
     },
     resource_id: { type: String, default: null },
     ip_address: { type: String, required: true },
