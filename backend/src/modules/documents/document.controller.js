@@ -590,13 +590,17 @@ async function uploadImage(req, res) {
     const destPath = path.join(dirPath, newFilename);
     fs.renameSync(req.file.path, destPath);
 
-    // ลดขนาดรูปภาพก่อนจัดเก็บถาวร (ไม่เกิน 1080p)
+    // ลดขนาดรูปภาพก่อนจัดเก็บถาวร (ไม่เกิน 1920x1080, JPEG 80%) — แปลง HEIC/HEIF/WEBP เป็น JPEG ด้วย
     const resized = await resizeImageFile(destPath);
+    if (!resized) {
+      fs.unlink(destPath, () => { });
+      return sendError(res, 400, 'ไฟล์รูปภาพไม่ถูกต้องหรือเสียหาย');
+    }
 
     doc.images.push({
-      file_path: destPath,
-      file_size: resized ? resized.size : req.file.size,
-      mime_type: resized ? resized.mime_type : req.file.mimetype,
+      file_path: resized.filePath,
+      file_size: resized.size,
+      mime_type: resized.mime_type,
       original_name: req.file.originalname,
       uploaded_by: doc.created_by,
     });

@@ -29,6 +29,7 @@ const outsourcedReportSchema = new mongoose.Schema(
         }, // key = fieldId ของฟิลด์ประเภท image
         submitted_by_user: { type: mongoose.Schema.Types.ObjectId, required: true },
         submitted_by_username: { type: String, default: '' },
+        submitted_by_name: { type: String, default: '' }, // ชื่อ-นามสกุลจริงจาก UMS สำหรับแสดงผลแทน username
     },
     { timestamps: true }
 );

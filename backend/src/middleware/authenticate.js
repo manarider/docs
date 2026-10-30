@@ -65,4 +65,22 @@ function requireOutsourcedManage(req, res, next) {
   next();
 }
 
-module.exports = { authenticate, requireRole, ROLE_LEVEL, requireOutsourcedAccess, requireOutsourcedManage };
+/**
+ * middleware: เฉพาะ role 'outsourced' เท่านั้น (จัดการโปรไฟล์ของตนเอง)
+ */
+function requireOutsourcedRole(req, res, next) {
+  if (!req.user) return sendError(res, 401, 'กรุณาเข้าสู่ระบบ');
+  if (req.user.role !== 'outsourced') {
+    return sendError(res, 403, 'เฉพาะเจ้าหน้าที่จ้างเหมาบริการเท่านั้น');
+  }
+  next();
+}
+
+module.exports = {
+  authenticate,
+  requireRole,
+  ROLE_LEVEL,
+  requireOutsourcedAccess,
+  requireOutsourcedManage,
+  requireOutsourcedRole,
+};

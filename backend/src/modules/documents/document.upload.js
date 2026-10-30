@@ -102,7 +102,16 @@ const imgStorage = multer.diskStorage({
 });
 
 const ALLOWED_DOC_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx'];
-const ALLOWED_IMG_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
+const ALLOWED_IMG_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'];
+const HEIC_EXTENSIONS = ['.heic', '.heif'];
+
+/**
+ * ตรวจไฟล์รูปภาพ — HEIC/HEIF ยอมรับตามนามสกุลไฟล์เสมอ เพราะ OS/browser มักส่ง mimetype มาไม่ตรงมาตรฐาน (เช่น application/octet-stream)
+ */
+function isAllowedImageFile(mimetype, ext) {
+  if (HEIC_EXTENSIONS.includes(ext)) return true;
+  return config.storage.allowedImgMimes.includes(mimetype) && ALLOWED_IMG_EXTENSIONS.includes(ext);
+}
 
 /**
  * multer instance สำหรับอัปโหลดเอกสาร (1 ไฟล์ ครั้งละครั้ง)
@@ -138,13 +147,10 @@ function uploadImg(req, res, cb) {
     limits: { fileSize: fileLimits.imgMB * 1024 * 1024, files: 1 },
     fileFilter: (req, file, next) => {
       const ext = path.extname(file.originalname).toLowerCase();
-      if (
-        config.storage.allowedImgMimes.includes(file.mimetype) &&
-        ALLOWED_IMG_EXTENSIONS.includes(ext)
-      ) {
+      if (isAllowedImageFile(file.mimetype, ext)) {
         next(null, true);
       } else {
-        next(new multer.MulterError('LIMIT_UNEXPECTED_FILE', 'ชนิดไฟล์ไม่รองรับ (JPG, PNG, WEBP เท่านั้น)'));
+        next(new multer.MulterError('LIMIT_UNEXPECTED_FILE', 'ชนิดไฟล์ไม่รองรับ (JPG, PNG, WEBP, HEIC, HEIF เท่านั้น)'));
       }
     },
   }).single('image');

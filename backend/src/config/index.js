@@ -46,6 +46,7 @@ const config = {
     downloadPath: process.env.DOC_DOWNLOAD_PATH || '/data/archives/documents/download',
     maxDocSizeMB: parseInt(process.env.MAX_DOC_SIZE_MB, 10) || 10,
     maxImgSizeMB: parseInt(process.env.MAX_IMG_SIZE_MB, 10) || 5,
+    maxOutsourcedImgSizeMB: parseInt(process.env.OUTSOURCED_MAX_IMG_SIZE_MB, 10) || 20,
     maxImagesPerDoc: parseInt(process.env.MAX_IMAGES_PER_DOC, 10) || 4,
     // ไฟล์แนบเอกสาร: รองรับ PDF + Word + Excel
     allowedDocMimes: [
@@ -63,7 +64,11 @@ const config = {
       'application/vnd.ms-excel',                                                      // .xls
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',             // .xlsx
     ],
-    allowedImgMimes: ['image/jpeg', 'image/png', 'image/webp'],
+    allowedImgMimes: [
+      'image/jpeg', 'image/png', 'image/webp',
+      // HEIC/HEIF (iPhone) — browser/OS มักส่ง mimetype มาไม่ตรงมาตรฐาน จึงเผื่อไว้หลายแบบ (นามสกุลไฟล์ยังถูกบังคับตรวจแยกอีกชั้นที่ fileFilter)
+      'image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence',
+    ],
   },
 
   rateLimit: {

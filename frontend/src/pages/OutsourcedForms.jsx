@@ -60,10 +60,16 @@ function normalizeFieldsForSave(fields) {
                 return savedColumn;
             }),
             radioOptions: field.type === 'radio'
-                ? (field.radioOptions || []).map((option) => ({ value: option.value, fields: normalizeFieldsForSave(option.fields || []) }))
+                ? (field.options || []).map((value) => ({ value, fields: normalizeFieldsForSave((field.radioOptions || []).find((option) => option.value === value)?.fields || []) }))
             : [],
         };
     });
+}
+
+function countSubFields(fields) {
+    return fields.reduce((count, field) => count + (field.radioOptions || []).reduce(
+        (total, option) => total + (option.fields || []).length + countSubFields(option.fields || []), 0
+    ), 0);
 }
 
 function FieldListEditor({ fields, onChange, depth = 0, mainFields = [] }) {
@@ -94,7 +100,12 @@ function FieldListEditor({ fields, onChange, depth = 0, mainFields = [] }) {
                             placeholder="ชื่อฟิลด์ เช่น รายละเอียดงาน"
                             maxLength={200}
                         />
-                        <select className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm" value={field.type} onChange={(event) => updateField(index, { type: event.target.value })}>
+                        <select className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm" value={field.type} onChange={(event) => updateField(index, {
+                            type: event.target.value,
+                            radioOptions: event.target.value === 'radio'
+                                ? (field.options || []).map((value) => (field.radioOptions || []).find((option) => option.value === value) || { value, fields: [] })
+                                : field.radioOptions,
+                        })}>
                             {FIELD_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
                         </select>
                         <button type="button" onClick={() => moveField(index, -1)} disabled={index === 0} aria-label="เลื่อนฟิลด์ขึ้น" title="เลื่อนฟิลด์ขึ้น" className="inline-flex min-h-10 min-w-10 items-center justify-center rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"><ChevronUp size={16} /></button>
@@ -108,7 +119,15 @@ function FieldListEditor({ fields, onChange, depth = 0, mainFields = [] }) {
                             value={field.optionsInput ?? (field.options || []).join(', ')}
                             onChange={(event) => {
                                 const options = [...new Set(event.target.value.split(',').map((value) => value.trim()).filter(Boolean))];
-                                const radioOptions = options.map((value) => field.radioOptions?.find((option) => option.value === value) || { value, fields: [] });
+                                const previousOptions = field.radioOptions || [];
+                                const radioOptions = [...previousOptions];
+                                options.forEach((value, optionIndex) => {
+                                    if (radioOptions.some((option) => option.value === value)) return;
+                                    const replaced = field.options?.[optionIndex];
+                                    const previous = options.length === field.options?.length && !options.includes(replaced)
+                                        ? radioOptions.find((option) => option.value === replaced) : null;
+                                    radioOptions.push({ value, fields: previous?.fields || [] });
+                                });
                                 updateField(index, { optionsInput: event.target.value, options, radioOptions });
                             }}
                             placeholder="ตัวเลือก คั่นด้วยจุลภาค เช่น มี, ไม่มี"
@@ -117,7 +136,7 @@ function FieldListEditor({ fields, onChange, depth = 0, mainFields = [] }) {
 
                     {field.type === 'radio' && (
                         <div className="space-y-2 pl-3 border-l-2 border-orange-200">
-                            {(field.radioOptions || []).map((option) => (
+                            {(field.radioOptions || []).filter((option) => field.options?.includes(option.value)).map((option) => (
                                 <section key={option.value} className="border border-gray-200 rounded-md bg-white p-3 space-y-2">
                                     <h4 className="text-sm font-semibold text-gray-700">เมื่อเลือก “{option.value}”</h4>
                                     <FieldListEditor
@@ -219,9 +238,12 @@ export default function OutsourcedForms() {
         const cleanFields = fields.filter((f) => f.label.trim());
         if (cleanFields.length === 0) return toast.error('กรุณาระบุฟิลด์อย่างน้อย 1 ฟิลด์');
 
+        const payload = { name, fields: normalizeFieldsForSave(cleanFields) };
+        if (editTarget && countSubFields(payload.fields) < countSubFields(editTarget.fields)
+            && !confirm('จำนวนฟิลด์ย่อยลดลงจากฟอร์มเดิม ต้องการบันทึกการลบฟิลด์ย่อยหรือไม่?')) return;
+
         setSaving(true);
         try {
-            const payload = { name, fields: normalizeFieldsForSave(cleanFields) };
             if (editTarget) {
                 await api.patch(`/outsourced/groups/${groupId}/forms/${editTarget._id}`, payload);
                 toast.success('อัปเดตเรียบร้อย');

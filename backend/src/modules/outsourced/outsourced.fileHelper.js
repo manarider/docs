@@ -56,6 +56,7 @@ async function resizePhotoMetas(photosByField) {
         for (const meta of metas) {
             const result = await resizeImageFile(meta.file_path);
             if (result) {
+                meta.file_path = result.filePath;
                 meta.file_size = result.size;
                 meta.mime_type = result.mime_type;
             }

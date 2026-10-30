@@ -6,7 +6,8 @@ const config = require('../../config');
 const { resizeImageFile } = require('../../utils/imageResize');
 
 const ALLOWED_IMG_MIMES = config.storage.allowedImgMimes;
-const ALLOWED_IMG_EXTS = ['.jpg', '.jpeg', '.png', '.webp'];
+const ALLOWED_IMG_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'];
+const HEIC_EXTS = ['.heic', '.heif'];
 
 /**
  * multer diskStorage — บันทึกลง tmp ก่อนเสมอ
@@ -25,10 +26,10 @@ const projectImgStorage = multer.diskStorage({
 
 const imgFileFilter = (req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
-  if (ALLOWED_IMG_MIMES.includes(file.mimetype) && ALLOWED_IMG_EXTS.includes(ext)) {
+  if (HEIC_EXTS.includes(ext) || (ALLOWED_IMG_MIMES.includes(file.mimetype) && ALLOWED_IMG_EXTS.includes(ext))) {
     return cb(null, true);
   }
-  cb(new Error('รองรับเฉพาะไฟล์รูปภาพ JPG, PNG, WEBP'));
+  cb(new Error('รองรับเฉพาะไฟล์รูปภาพ JPG, PNG, WEBP, HEIC, HEIF'));
 };
 
 /**
@@ -92,11 +93,11 @@ function uploadAcceptancePhotos(req, res, cb) {
         }
         return next(new Error('delivery_doc รองรับเฉพาะ PDF, Word, Excel'));
       }
-      // inspection_photos → image only
-      if (ALLOWED_IMG_MIMES.includes(file.mimetype) && ALLOWED_IMG_EXTS.includes(ext)) {
+      // inspection_photos → image only (HEIC/HEIF ยอมรับตามนามสกุลไฟล์เสมอ)
+      if (HEIC_EXTS.includes(ext) || (ALLOWED_IMG_MIMES.includes(file.mimetype) && ALLOWED_IMG_EXTS.includes(ext))) {
         return next(null, true);
       }
-      next(new Error('รองรับเฉพาะไฟล์รูปภาพ JPG, PNG, WEBP'));
+      next(new Error('รองรับเฉพาะไฟล์รูปภาพ JPG, PNG, WEBP, HEIC, HEIF'));
     },
   }).fields([
     { name: 'inspection_photos', maxCount: 50 },
@@ -205,6 +206,7 @@ async function resizeProjectPhotos(photoMetas) {
     if (!meta?.file_path) continue;
     const result = await resizeImageFile(meta.file_path);
     if (result) {
+      meta.file_path = result.filePath;
       meta.file_size = result.size;
       meta.mime_type = result.mime_type;
     }

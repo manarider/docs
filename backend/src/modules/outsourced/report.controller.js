@@ -4,13 +4,50 @@ const OutsourcedReportForm = require('../../models/OutsourcedReportForm');
 const OutsourcedReportFormVersion = require('../../models/OutsourcedReportFormVersion');
 const { ensureFormVersion } = require('./formVersionHelper');
 const OutsourcedReport = require('../../models/OutsourcedReport');
+const OutsourcedUserProfile = require('../../models/OutsourcedUserProfile');
 const { logAction, getIp } = require('../../utils/auditHelper');
 const { sendSuccess, sendError } = require('../../utils/response');
 const logger = require('../../utils/logger');
 const { moveFilesByField, cleanupTmpFiles, resizePhotoMetas, isSafeOutsourcedPath } = require('./outsourced.fileHelper');
+const { resizeImageFile } = require('../../utils/imageResize');
 const { generateOutsourcedReportPdf } = require('./outsourced.pdfGenerator');
+const { getFiscalYearRange } = require('../../utils/fiscalYear');
+const dayjs = require('dayjs');
+const timezone = require('dayjs/plugin/timezone');
+const utc = require('dayjs/plugin/utc');
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 const MAX_TABLE_ROWS = 50;
+const canSeeAllReports = (user) => ['admin', 'superadmin'].includes(user.role);
+const reportAccessFilter = (req) => ({
+    group_id: req.params.groupId,
+    ...(!canSeeAllReports(req.user) && { submitted_by_user: req.user.userId }),
+});
+
+function collectSearchPaths(fields, paths, numericPaths) {
+    for (const field of fields || []) {
+        if (!field.fieldId) continue;
+        paths.add(`values.${field.fieldId}`);
+        if (field.type === 'number') numericPaths.add(`values.${field.fieldId}`);
+        if (field.type === 'table') {
+            for (const column of field.tableColumns || []) {
+                if (!column.columnId) continue;
+                const columnPath = `values.${field.fieldId}.${column.columnId}`;
+                paths.add(columnPath);
+                if (column.type === 'number') numericPaths.add(columnPath);
+            }
+        }
+        for (const option of field.radioOptions || []) collectSearchPaths(option.fields, paths, numericPaths);
+        for (const child of Object.values(field.radioSubFields || {})) {
+            if (!child?.fieldId) continue;
+            const childPath = `values.${child.fieldId}`;
+            paths.add(childPath);
+            if (child.type === 'number') numericPaths.add(childPath);
+        }
+    }
+}
 
 function validateAndCleanFields(fields, values, uploadedFiles, cleanValues, allowedImageFields = new Map(), depth = 0) {
     if (depth > 3) return 'ฟอร์มย่อยซ้อนกันลึกเกินกำหนด';
@@ -87,13 +124,41 @@ function validateAndCleanFields(fields, values, uploadedFiles, cleanValues, allo
  */
 async function listReports(req, res) {
     try {
-        const { groupId } = req.params;
-        const { page = 1, limit = 20, formId } = req.query;
+        const { page = 1, limit = 20, formId, fiscalYear, month, search } = req.query;
         const pageNum = Math.max(1, parseInt(page, 10));
         const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10)));
 
-        const filter = { group_id: groupId };
+        if (fiscalYear && (!/^\d{4}$/.test(String(fiscalYear)) || Number(fiscalYear) < 2500 || Number(fiscalYear) > 2800)) return sendError(res, 400, 'ปีงบประมาณไม่ถูกต้อง');
+        if (month && (!fiscalYear || !/^(?:[1-9]|1[0-2])$/.test(String(month)))) return sendError(res, 400, 'กรุณาเลือกปีงบประมาณและเดือนให้ถูกต้อง');
+
+        const filter = reportAccessFilter(req);
         if (formId) filter.form_id = formId;
+        if (fiscalYear) {
+            const year = Number(fiscalYear);
+            filter.report_date = { $gte: getFiscalYearRange(year).start, $lt: getFiscalYearRange(year + 1).start };
+            if (month) {
+                const calendarYear = year - (Number(month) >= 10 ? 544 : 543);
+                const start = dayjs.tz(`${calendarYear}-${String(month).padStart(2, '0')}-01`, 'Asia/Bangkok');
+                filter.report_date = { $gte: start.toDate(), $lt: start.add(1, 'month').toDate() };
+            }
+        }
+        if (String(search || '').trim()) {
+            const term = String(search).trim().slice(0, 100).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(term, 'i');
+            const forms = await OutsourcedReportForm.find({ group_id: req.params.groupId }).select('name fields').lean();
+            const versions = await OutsourcedReportFormVersion.find({ form_id: { $in: forms.map((form) => form._id) } }).select('form_id name fields').lean();
+            const paths = new Set();
+            const numericPaths = new Set();
+            for (const form of [...forms, ...versions]) collectSearchPaths(form.fields, paths, numericPaths);
+            const matchedForms = [...forms, ...versions].filter((form) => regex.test(form.name)).map((form) => form.form_id || form._id);
+            filter.$or = [
+                { submitted_by_username: regex },
+                { submitted_by_name: regex },
+                { form_id: { $in: matchedForms } },
+                ...[...paths].map((fieldPath) => ({ [fieldPath]: regex })),
+                ...(/^[-+]?\d+(?:\.\d+)?$/.test(String(search).trim()) ? [...numericPaths].map((fieldPath) => ({ [fieldPath]: Number(search) })) : []),
+            ];
+        }
 
         const [reports, total] = await Promise.all([
             OutsourcedReport.find(filter)
@@ -119,7 +184,7 @@ async function listReports(req, res) {
 
 async function getReport(req, res) {
     try {
-        const report = await OutsourcedReport.findOne({ _id: req.params.reportId, group_id: req.params.groupId })
+        const report = await OutsourcedReport.findOne({ _id: req.params.reportId, ...reportAccessFilter(req) })
             .select('-photos')
             .populate('form_id', 'name fields')
             .lean();
@@ -184,6 +249,7 @@ async function createReport(req, res) {
             photos: photosByField,
             submitted_by_user: req.user.userId,
             submitted_by_username: req.user.username,
+            submitted_by_name: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim(),
         });
 
         await logAction({
@@ -203,15 +269,43 @@ async function createReport(req, res) {
     }
 }
 
+async function previewReportImage(req, res) {
+    const uploadedFiles = req.files || [];
+    if (uploadedFiles.length !== 1) {
+        cleanupTmpFiles(uploadedFiles);
+        return sendError(res, 400, 'กรุณาเลือกภาพ 1 ไฟล์');
+    }
+
+    const file = uploadedFiles[0];
+    try {
+        const resized = await resizeImageFile(file.path);
+        if (!resized) {
+            cleanupTmpFiles(uploadedFiles);
+            return sendError(res, 400, 'ไม่สามารถแปลงภาพเพื่อแสดงตัวอย่างได้');
+        }
+
+        file.path = resized.filePath;
+        res.set('Cache-Control', 'no-store');
+        res.set('Content-Type', 'image/jpeg');
+        return res.sendFile(path.resolve(file.path), (err) => {
+            cleanupTmpFiles(uploadedFiles);
+            if (err && !res.headersSent) sendError(res, 500, 'ส่งภาพตัวอย่างไม่สำเร็จ');
+        });
+    } catch (err) {
+        cleanupTmpFiles(uploadedFiles);
+        logger.error(`[Outsourced] previewReportImage error: ${err.message}`);
+        return sendError(res, 500, 'สร้างภาพตัวอย่างไม่สำเร็จ');
+    }
+}
+
 async function deleteReport(req, res) {
     try {
         const report = await OutsourcedReport.findOne({ _id: req.params.reportId, group_id: req.params.groupId });
         if (!report) return sendError(res, 404, 'ไม่พบรายงาน');
 
-        // เจ้าของรายงานหรือ staff/admin เท่านั้นที่ลบได้
+        // เจ้าของรายงานหรือ admin เท่านั้นที่ลบได้
         const isOwner = String(report.submitted_by_user) === String(req.user.userId);
-        const isStaffUp = req.user.role !== 'outsourced';
-        if (!isOwner && !isStaffUp) return sendError(res, 403, 'คุณไม่มีสิทธิ์ลบรายงานนี้');
+        if (!isOwner && !canSeeAllReports(req.user)) return sendError(res, 403, 'คุณไม่มีสิทธิ์ลบรายงานนี้');
 
         await report.deleteOne();
 
@@ -234,8 +328,8 @@ async function deleteReport(req, res) {
  */
 async function viewReportPhoto(req, res) {
     try {
-        const { reportId, groupId, fieldId, index } = req.params;
-        const report = await OutsourcedReport.findOne({ _id: reportId, group_id: groupId })
+        const { reportId, fieldId, index } = req.params;
+        const report = await OutsourcedReport.findOne({ _id: reportId, ...reportAccessFilter(req) })
             .select(`photos.${fieldId}.file_path photos.${fieldId}.mime_type`)
             .lean();
         if (!report) return sendError(res, 404, 'ไม่พบรายงาน');
@@ -259,7 +353,7 @@ async function downloadReportPdf(req, res) {
         const { groupId, reportId } = req.params;
         const [group, report] = await Promise.all([
             OutsourcedGroup.findOne({ _id: groupId, deleted_at: null }).lean(),
-            OutsourcedReport.findOne({ _id: reportId, group_id: groupId }).lean(),
+            OutsourcedReport.findOne({ _id: reportId, ...reportAccessFilter(req) }).lean(),
         ]);
         if (!group || !report) return sendError(res, 404, 'ไม่พบข้อมูล');
 
@@ -268,8 +362,8 @@ async function downloadReportPdf(req, res) {
             : null;
         const form = formVersion || await OutsourcedReportForm.findOne({ _id: report.form_id, group_id: groupId }).lean();
         if (!form) return sendError(res, 404, 'ไม่พบฟอร์มการรายงาน');
-
-        const pdfBytes = await generateOutsourcedReportPdf(report, form, group);
+        const profile = await OutsourcedUserProfile.findOne({ user_id: report.submitted_by_user }).lean();
+        const pdfBytes = await generateOutsourcedReportPdf(report, form, group, profile);
 
         await logAction({
             userId: req.user.userId, username: req.user.username,
@@ -287,4 +381,4 @@ async function downloadReportPdf(req, res) {
     }
 }
 
-module.exports = { listReports, getReport, createReport, deleteReport, viewReportPhoto, downloadReportPdf, validateAndCleanFields };
+module.exports = { listReports, getReport, createReport, previewReportImage, deleteReport, viewReportPhoto, downloadReportPdf, validateAndCleanFields };

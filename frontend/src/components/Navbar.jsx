@@ -64,6 +64,14 @@ export default function Navbar({ onMenuClick }) {
               <p className="font-medium">{user.firstName} {user.lastName}</p>
               <p className="text-orange-100 text-xs">{user.role} • {user.subDepartment || 'ทั่วไป'}</p>
             </div>
+            {user.role === 'outsourced' && (
+              <button
+                onClick={() => navigate('/outsourced/profile')}
+                className="bg-white/20 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-white/30 transition"
+              >
+                จัดการโปรไฟล์
+              </button>
+            )}
             <button
               onClick={logout}
               className="bg-white text-primary px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-orange-50 transition"

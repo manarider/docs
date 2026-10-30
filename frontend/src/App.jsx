@@ -31,6 +31,7 @@ import TemplateDesigner from './pages/TemplateDesigner';
 import OutsourcedGroups from './pages/OutsourcedGroups';
 import OutsourcedForms from './pages/OutsourcedForms';
 import OutsourcedReports from './pages/OutsourcedReports';
+import OutsourcedProfile from './pages/OutsourcedProfile';
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -79,6 +80,7 @@ function AppRoutes() {
                 <Route path="outsourced" element={<OutsourcedGroups />} />
                 <Route path="outsourced/groups/:groupId/forms" element={<OutsourcedForms />} />
                 <Route path="outsourced/groups/:groupId/reports" element={<OutsourcedReports />} />
+                <Route path="outsourced/profile" element={<OutsourcedProfile />} />
                 <Route path="*" element={<Navigate to="/outsourced" replace />} />
               </>
             ) : (
