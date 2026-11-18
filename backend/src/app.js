@@ -29,6 +29,7 @@ const equipmentRoutes = require('./modules/projects/equipment.routes');
 const templateRoutes = require('./modules/report-templates/template.routes');
 const generatorRoutes = require('./modules/report-templates/generator.routes');
 const outsourcedRoutes = require('./modules/outsourced/outsourced.routes');
+const meetingRoutes = require('./modules/meetings/meeting.routes');
 const { initFileSizeLimitsFromDb } = require('./modules/documents/document.upload');
 
 const app = express();
@@ -117,6 +118,7 @@ app.use('/api/projects', templateRoutes);
 app.use('/api/projects', generatorRoutes);
 app.use('/api/equipment', equipmentRoutes);
 app.use('/api/outsourced', outsourcedRoutes);
+app.use('/api/meetings', meetingRoutes);
 
 // ─── Serve React Frontend (production) ───────────────────────────────────────
 const frontendDist = path.join(__dirname, '../../frontend/dist');

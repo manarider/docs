@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 const navItems = [
   { to: '/', label: 'หน้าหลัก', icon: '🏠' },
   { to: '/documents', label: 'เอกสาร', icon: '📄' },
+  { to: '/meetingdocs', label: 'MeetingDocs', icon: '🗓️' },
   { to: '/search', label: 'ค้นหา', icon: '🔍' },
   { to: '/reports', label: 'สถิติ', icon: '📊' },
   { to: '/equipment-search', label: 'ค้นหาครุภัณฑ์', icon: '🔧' },

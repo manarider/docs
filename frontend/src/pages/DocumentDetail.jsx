@@ -24,7 +24,7 @@ export default function DocumentDetail() {
       .then(({ data }) => {
         const d = data.data;
         setDoc(d);
-        if (d.type_id?.code?.toUpperCase() === 'DOW') {
+        if (['DOW', 'MEET'].includes(d.type_id?.code?.toUpperCase())) {
           return api.get(`/documents/${id}/share`)
             .then(({ data: sd }) => setShareInfo(sd.data))
             .catch(() => {});
@@ -197,8 +197,8 @@ export default function DocumentDetail() {
         </div>
       </div>
 
-      {/* DOW Share Info Panel */}
-      {doc.type_id?.code?.toUpperCase() === 'DOW' && shareInfo && (
+      {/* Share Info Panel — DOW / เอกสารประชุม (MEET) */}
+      {['DOW', 'MEET'].includes(doc.type_id?.code?.toUpperCase()) && shareInfo && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 space-y-3">
           <p className="font-semibold text-blue-800 text-sm">📤 ลิงก์แชร์ดาวน์โหลด</p>
           <div className="text-xs text-blue-700 space-y-0.5">

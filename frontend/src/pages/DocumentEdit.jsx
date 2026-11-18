@@ -39,8 +39,9 @@ export default function DocumentEdit() {
   const [editingTitle, setEditingTitle] = useState('');   // ค่าชื่อชั่วคราว
   const blockNavRef = useRef(false);
 
-  // DOW share state
+  // DOW / MEET share state
   const [isDownloadType, setIsDownloadType] = useState(false);
+  const [isMeetingType, setIsMeetingType] = useState(false); // เอกสารประชุม — ไฟล์แนบรองรับเฉพาะ PDF
   const [shareInfo, setShareInfo] = useState(null); // { token, qr_code, share_url, shared_at }
   const [shareModal, setShareModal] = useState(false);
   const [sharingLoading, setSharingLoading] = useState(false);
@@ -62,9 +63,12 @@ export default function DocumentEdit() {
         });
         setAttachments(doc.attachments || []);
         setPublicDurationHours(ps.data?.public_duration_hours ?? 24);
-        const isDow = doc.type_id?.code?.toUpperCase() === 'DOW';
-        setIsDownloadType(isDow);
-        if (isDow) {
+        // DOW และเอกสารประชุม (MEET) รองรับการแชร์ลิงก์/QR Code แบบเดียวกัน
+        const typeCode = doc.type_id?.code?.toUpperCase();
+        const isShareable = ['DOW', 'MEET'].includes(typeCode);
+        setIsDownloadType(isShareable);
+        setIsMeetingType(typeCode === 'MEET');
+        if (isShareable) {
           return api.get(`/documents/${id}/share`)
             .then(({ data: sd }) => setShareInfo(sd.data))
             .catch(() => {});
@@ -302,11 +306,11 @@ export default function DocumentEdit() {
           />
         </div>
 
-        {/* ─── DOW Share Section ─────────────────────────────── */}
+        {/* ─── Share Section — DOW / เอกสารประชุม (MEET) ─────────────────────── */}
         {isDownloadType && (
           <div className="border border-blue-200 rounded-xl p-4 bg-blue-50 space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-blue-800">📤 แชร์เอกสารดาวน์โหลด (DOW)</p>
+              <p className="text-sm font-semibold text-blue-800">📤 แชร์ลิงก์ / QR Code</p>
               {!shareInfo ? (
                 <button
                   type="button"
@@ -566,11 +570,11 @@ export default function DocumentEdit() {
               {f.entry_type === 'file' ? (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">
-                    เลือกไฟล์ (PDF, Word, Excel)
+                    เลือกไฟล์ {isMeetingType ? '(PDF เท่านั้น)' : '(PDF, Word, Excel)'}
                   </label>
                   <input
                     type="file"
-                    accept=".pdf,.doc,.docx,.xls,.xlsx"
+                    accept={isMeetingType ? '.pdf' : '.pdf,.doc,.docx,.xls,.xlsx'}
                     onChange={(e) => setFileField(idx, 'file', e.target.files[0] || null)}
                     className="text-sm text-gray-600"
                   />
@@ -658,10 +662,12 @@ export default function DocumentEdit() {
                 ไฟล์ที่ต้องการเปลี่ยน:{' '}
                 <span className="font-medium text-gray-700">{replaceTarget.subTitle}</span>
               </p>
-              <label className="block text-xs font-medium text-gray-600">เลือกไฟล์ใหม่ (PDF, Word, Excel)</label>
+              <label className="block text-xs font-medium text-gray-600">
+                เลือกไฟล์ใหม่ {isMeetingType ? '(PDF เท่านั้น)' : '(PDF, Word, Excel)'}
+              </label>
               <input
                 type="file"
-                accept=".pdf,.doc,.docx,.xls,.xlsx"
+                accept={isMeetingType ? '.pdf' : '.pdf,.doc,.docx,.xls,.xlsx'}
                 onChange={(e) => setReplaceFile(e.target.files[0] || null)}
                 className="text-sm text-gray-600 w-full"
               />

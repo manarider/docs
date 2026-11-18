@@ -39,9 +39,16 @@ async function listDocuments(req, res) {
     if (is_public === 'true') filter.is_public = true;
     if (q) filter.$text = { $search: q };
 
+    // เอกสารประชุม (DocType code: MEET) — ทุกคนมองเห็นได้ ไม่จำกัดตามหน่วยงาน
+    let isMeetingDocFilter = false;
+    if (type) {
+      const filterDocType = await DocType.findById(type).select('code').lean();
+      isMeetingDocFilter = filterDocType?.code?.toUpperCase() === 'MEET';
+    }
+
     // ถ้าไม่ใช่ admin/manager/staff กรองโดยหน่วยงานตัวเอง + เอกสารสาธารณะที่ยังไม่หมดเวลา
     const userRole = req.user?.role;
-    if (!['superadmin', 'admin', 'manager', 'staff'].includes(userRole)) {
+    if (!isMeetingDocFilter && !['superadmin', 'admin', 'manager', 'staff'].includes(userRole)) {
       const now = new Date();
       const publicActiveCond = {
         is_public: true,
@@ -145,7 +152,9 @@ async function getDocument(req, res) {
     const now = new Date();
     const isCurrentlyPublic =
       doc.is_public && (!doc.public_expires_at || new Date(doc.public_expires_at) > now);
-    if (!isCurrentlyPublic && !['superadmin', 'admin', 'manager'].includes(userRole)) {
+    // เอกสารประชุม (DocType code: MEET) — ทุกคนมองเห็นได้ ไม่จำกัดตามหน่วยงาน
+    const isMeetingDoc = doc.type_id?.code?.toUpperCase() === 'MEET';
+    if (!isCurrentlyPublic && !isMeetingDoc && !['superadmin', 'admin', 'manager'].includes(userRole)) {
       // staff ดูได้เฉพาะหน่วยงานตัวเอง
       if (userRole === 'staff') {
         if (!req.user?.deptId || String(doc.dept_id) !== String(req.user.deptId)) {
@@ -310,6 +319,16 @@ async function uploadAttachment(req, res) {
     if (!doc) {
       fs.unlinkSync(req.file.path);
       return sendError(res, 404, 'ไม่พบเอกสาร');
+    }
+
+    // เอกสารประชุม (DocType code: MEET) — รองรับเฉพาะไฟล์ PDF เท่านั้น
+    const attDocType = await DocType.findById(doc.type_id).select('code').lean();
+    if (attDocType?.code?.toUpperCase() === 'MEET') {
+      const fileExt = path.extname(req.file.originalname).toLowerCase();
+      if (req.file.mimetype !== 'application/pdf' || fileExt !== '.pdf') {
+        fs.unlinkSync(req.file.path);
+        return sendError(res, 400, 'เอกสารประชุมรองรับไฟล์แนบเฉพาะ PDF เท่านั้น');
+      }
     }
 
     // ย้ายไฟล์จาก _tmp ไปยัง path จริง
@@ -1049,9 +1068,10 @@ async function createShare(req, res) {
       .lean(false);
     if (!doc) return sendError(res, 404, 'ไม่พบเอกสาร');
 
-    // ตรวจว่าเป็น DOW
-    if (doc.type_id?.code?.toUpperCase() !== 'DOW') {
-      return sendError(res, 400, 'เฉพาะเอกสารประเภท DOW เท่านั้นที่สามารถแชร์ได้');
+    // ตรวจว่าเป็น DOW หรือเอกสารประชุม (MEET)
+    const shareTypeCode = doc.type_id?.code?.toUpperCase();
+    if (!['DOW', 'MEET'].includes(shareTypeCode)) {
+      return sendError(res, 400, 'เฉพาะเอกสารประเภท DOW หรือเอกสารประชุมเท่านั้นที่สามารถแชร์ได้');
     }
 
     // ตรวจสิทธิ์: owner หรือ admin+

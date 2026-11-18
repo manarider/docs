@@ -32,6 +32,8 @@ import OutsourcedGroups from './pages/OutsourcedGroups';
 import OutsourcedForms from './pages/OutsourcedForms';
 import OutsourcedReports from './pages/OutsourcedReports';
 import OutsourcedProfile from './pages/OutsourcedProfile';
+import MeetingDocs from './pages/MeetingDocs';
+import MeetingDisplay from './pages/MeetingDisplay';
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -90,6 +92,7 @@ function AppRoutes() {
                 <Route path="documents/new" element={<DocumentNew />} />
                 <Route path="documents/:id" element={<DocumentDetail />} />
                 <Route path="documents/:id/edit" element={<DocumentEdit />} />
+                <Route path="meetingdocs" element={<MeetingDocs />} />
                 <Route path="search" element={<Search />} />
                 <Route path="reports" element={<Reports />} />
                 <Route path="equipment-search" element={<EquipmentSearch />} />
@@ -117,6 +120,7 @@ export default function App() {
       <Routes>
         {/* Public route — ไม่ต้องผ่าน AuthProvider เลย */}
         <Route path="/download/:token" element={<PublicDownload />} />
+        <Route path="/meet" element={<MeetingDisplay />} />
         <Route path="/project-access" element={<ProjectKeyLogin />} />
         {/* ทุก route อื่น → ผ่าน Auth + ProjectAuth */}
         <Route

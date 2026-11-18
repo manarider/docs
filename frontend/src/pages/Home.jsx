@@ -36,6 +36,7 @@ export default function Home() {
           { label: 'อัปโหลดเอกสาร', icon: '📤', to: '/documents/new', color: 'bg-orange-50 border-orange-200' },
           { label: 'ค้นหาเอกสาร', icon: '🔍', to: '/search', color: 'bg-blue-50 border-blue-200' },
           { label: 'เอกสารล่าสุด', icon: '📋', to: '/documents', color: 'bg-green-50 border-green-200' },
+          { label: 'MeetingDocs', icon: '🗓️', to: '/meetingdocs', color: 'bg-amber-50 border-amber-200' },
           { label: 'รายงาน', icon: '📊', to: '/reports', color: 'bg-purple-50 border-purple-200' },
         ].map((item) => (
           <Link
