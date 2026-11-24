@@ -10,6 +10,7 @@ const {
     listReports,
     getReport,
     createReport,
+    updateReport,
     previewReportImage,
     deleteReport,
     viewReportPhoto,
@@ -63,6 +64,13 @@ router.post(
     requireOutsourcedAccess,
     (req, res, next) => uploadOutsourcedReportFiles(req, res, (err) => { if (err) return handleOutsourcedMulterError(err, req, res, next); next(); }),
     createReport
+);
+router.patch(
+    '/groups/:groupId/reports/:reportId',
+    authenticate,
+    requireOutsourcedAccess,
+    (req, res, next) => uploadOutsourcedReportFiles(req, res, (err) => { if (err) return handleOutsourcedMulterError(err, req, res, next); next(); }),
+    updateReport
 );
 router.delete('/groups/:groupId/reports/:reportId', authenticate, requireOutsourcedAccess, deleteReport);
 router.get('/groups/:groupId/reports/:reportId/photos/:fieldId/:index', authenticate, requireOutsourcedAccess, viewReportPhoto);

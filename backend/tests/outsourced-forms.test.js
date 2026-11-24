@@ -158,18 +158,19 @@ describe('Outsourced nested form fields', () => {
         }
     });
 
-    test('places before and after photos using the dynamic photo grid (up to 12 per page)', async () => {
+    test('combines before/after photos onto shared split pages (max 6 per half, paginated)', async () => {
         const imagePath = path.join(config.storage.basePath, '_outsourced', 'test.png');
         const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==', 'base64');
         const readFile = fs.readFile.bind(fs);
         const readSpy = jest.spyOn(fs, 'readFile').mockImplementation((filePath) => filePath === imagePath ? Promise.resolve(image) : readFile(filePath));
+        const textSpy = jest.spyOn(PDFPage.prototype, 'drawText');
 
         try {
             const pdf = await generateOutsourcedReportPdf(
                 {
                     report_date: new Date(), values: {}, photos: {
-                        before: Array.from({ length: 5 }, () => ({ file_path: imagePath })),
-                        after: [{ file_path: imagePath }],
+                        before: Array.from({ length: 7 }, () => ({ file_path: imagePath })),
+                        after: Array.from({ length: 2 }, () => ({ file_path: imagePath })),
                     },
                 },
                 { name: 'รายงาน', fields: [
@@ -179,11 +180,14 @@ describe('Outsourced nested form fields', () => {
                 { name: 'กลุ่มงาน' }
             );
 
-            // หน้าเนื้อหา 1 + ภาพก่อน (5 ภาพ พอดีในตาราง 3x4 หน้าเดียว) 1 + ภาพหลัง (1 ภาพ) 1 = 3
+            // หน้าเนื้อหา 1 + หน้าภาพรวม (before 7 ภาพ เกิน 6/ครึ่ง → 2 หน้า, after 2 ภาพพอดีหน้าแรก) = 1 + 2 = 3
             expect((await PDFDocument.load(pdf)).getPageCount()).toBe(3);
-            expect(readSpy).toHaveBeenCalledTimes(8);
+            expect(readSpy).toHaveBeenCalledTimes(11);
+            expect(textSpy.mock.calls.some(([text]) => text === 'ภาพก่อนดำเนินการ')).toBe(true);
+            expect(textSpy.mock.calls.some(([text]) => text === 'ภาพหลังดำเนินการ')).toBe(true);
         } finally {
             readSpy.mockRestore();
+            textSpy.mockRestore();
         }
     });
 
@@ -256,6 +260,44 @@ describe('Outsourced nested form fields', () => {
             expect(textSpy.mock.calls.some(([text]) => String(text).startsWith('ลงชื่อ') && text.includes('คณะกรรมการ'))).toBe(true);
         } finally {
             textSpy.mockRestore();
+        }
+    });
+
+    test('shows dotted placeholder for an empty summary, uses committee member #1 with 2-line position, and renders per-visit entries on page 2', async () => {
+        const textSpy = jest.spyOn(PDFPage.prototype, 'drawText');
+        const lineSpy = jest.spyOn(PDFPage.prototype, 'drawLine');
+        try {
+            await generateOutsourcedReportPdf(
+                { report_date: new Date(), submitted_by_name: 'นายทดสอบ ระบบ', values: {} },
+                { name: 'รายงาน', fields: [] },
+                { name: 'กลุ่มงาน' },
+                null,
+                {
+                    summary: [], problems: [], followUps: [],
+                    entries: [
+                        { type: 'ตรวจสอบ A', project: 'โครงการ A', place: 'จุด A', network: 'ใช้งานได้', power: 'ใช้งานได้' },
+                        { type: 'ตรวจสอบ B', project: 'โครงการ B', place: 'จุด B', network: 'ใช้งานไม่ได้', power: 'ใช้งานได้' },
+                    ],
+                },
+                { name: 'นายประธาน กรรมการ', position: 'ประธานกรรมการตรวจรับพัสดุ\nในงานจ้างเหมาบริการ' }
+            );
+
+            // สรุปการปฏิบัติงาน — ไม่มีข้อมูล ต้องมีจุดไข่ปลาเช่นเดียวกับอีก 2 ส่วน
+            expect(textSpy.mock.calls.some(([text]) => /^1\. \.{5,}$/.test(text))).toBe(true);
+
+            // คณะกรรมการ: ใช้ชื่อคนที่ 1 เสมอ พร้อมตำแหน่ง 2 บรรทัด
+            expect(textSpy.mock.calls.some(([text]) => text === '(นายประธาน กรรมการ)')).toBe(true);
+            expect(textSpy.mock.calls.some(([text]) => text === 'ประธานกรรมการตรวจรับพัสดุ')).toBe(true);
+            expect(textSpy.mock.calls.some(([text]) => text === 'ในงานจ้างเหมาบริการ')).toBe(true);
+
+            // หน้าที่ 2: แสดงข้อมูลแต่ละครั้งของวันนั้น พร้อมเส้นประคั่นระหว่างรายการ
+            expect(textSpy.mock.calls.some(([text]) => text === 'ข้อมูลการรายงานแต่ละครั้งของวันนั้น')).toBe(true);
+            expect(textSpy.mock.calls.some(([text]) => text === 'ประเภทงาน : ตรวจสอบ A')).toBe(true);
+            expect(textSpy.mock.calls.some(([text]) => text === 'โครงการ: โครงการ B')).toBe(true);
+            expect(lineSpy.mock.calls.some(([options]) => Array.isArray(options?.dashArray))).toBe(true);
+        } finally {
+            textSpy.mockRestore();
+            lineSpy.mockRestore();
         }
     });
 });

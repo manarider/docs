@@ -30,10 +30,11 @@ async function embedImageFromFile(pdfDoc, filePath) {
  * @param {Object} form - OutsourcedReportForm (plain object)
  * @param {Object} group - OutsourcedGroup (plain object)
  * @param {Object} [profile] - OutsourcedUserProfile ของผู้ส่งมอบงาน (plain object) — ตำแหน่งหน้าที่ / เลขที่บันทึกตกลงจ้าง
- * @param {Object} [dailySections] - { summary, problems, followUps } รวมจากทุกรายงานวันเดียวกัน (string[])
+ * @param {Object} [dailySections] - { summary, problems, followUps, entries } รวมจากทุกรายงานวันเดียวกัน
+ * @param {Object} [committee] - OutsourcedCommitteeMember คนที่ 1 ของกลุ่มงาน (plain object) — name / position
  * @returns {Promise<Buffer>}
  */
-async function generateOutsourcedReportPdf(report, form, group, profile, dailySections) {
+async function generateOutsourcedReportPdf(report, form, group, profile, dailySections, committee) {
     const pdfDoc = await PDFDocument.create();
     pdfDoc.registerFontkit(fontkit);
 
@@ -296,28 +297,41 @@ async function generateOutsourcedReportPdf(report, form, group, profile, dailySe
         rows.forEach((text, index) => drawLine(`${index + 1}. ${text}`, FONT_SIZE, rgb(0, 0, 0), true));
     };
 
-    drawNumberedSection('สรุปการปฏิบัติงาน:', dailySections?.summary || []);
+    drawNumberedSection('สรุปการปฏิบัติงาน:', dailySections?.summary || [], { placeholderWhenEmpty: true });
     y -= 6;
     drawNumberedSection('ปัญหา/อุปสรรค(ถ้ามี):', dailySections?.problems || [], { placeholderWhenEmpty: true });
     y -= 6;
     drawNumberedSection('งานที่ต้องติดตามต่อในวันพรุ่งนี้:', dailySections?.followUps || [], { placeholderWhenEmpty: true });
     y -= 14;
 
-    // ─── ช่องลงชื่อ (จัดกลางหน้า) ─────────────────────────────────────────────
+    // ─── ช่องลงชื่อ (จัดกลางหน้า และชิดขอบล่างของหน้าเสมอ) ──────────────────────
     const drawCentered = (text, bold = false) => {
-        if (y < CONTENT_BOTTOM + LINE_HEIGHT) addPage();
         const width = fontFor(bold).widthOfTextAtSize(text, FONT_SIZE);
         drawText(text, { x: (PAGE_SIZE[0] - width) / 2, y, size: FONT_SIZE, color: rgb(0, 0, 0) }, bold);
         y -= FONT_SIZE + 8;
     };
     const signatureLine = (roleLabel) => `ลงชื่อ${'.'.repeat(40)}${roleLabel}`;
 
+    const committeeName = committee?.name || '';
+    const committeePositionLines = String(committee?.position || '').split('\n').map((line) => line.trim()).filter((line) => line !== '');
+
+    const lineStep = FONT_SIZE + 8;
+    const staffLines = 2; // ลงชื่อ...ผู้รับจ้าง / (ชื่อเจ้าหน้าที่)
+    const committeeLines = 2 + committeePositionLines.length; // ลงชื่อ...คณะกรรมการ / (ชื่อ) / ตำแหน่ง (0-2 บรรทัด)
+    const blockGap = 28;
+    const totalSignatureHeight = staffLines * lineStep + blockGap + committeeLines * lineStep;
+
+    // บังคับให้ช่องลงชื่อชิดขอบล่างของหน้าเสมอ ไม่ว่าเนื้อหาก่อนหน้าจะยาวแค่ไหน
+    const anchorY = CONTENT_BOTTOM + totalSignatureHeight;
+    if (y < anchorY) addPage();
+    y = anchorY;
+
     drawCentered(signatureLine('ผู้รับจ้าง'));
     drawCentered(`(${submitterName || ''})`);
-    y -= 28;
+    y -= blockGap;
     drawCentered(signatureLine('คณะกรรมการ'));
-    drawCentered('(                              )');
-    y -= 14;
+    drawCentered(committeeName ? `(${committeeName})` : '(                              )');
+    committeePositionLines.forEach((line) => drawCentered(line));
 
     // ─── ฟิลด์อื่นที่ไม่ตรงกับแบบฟอร์มงานกล้องฯ (เผื่อแก้ไขฟอร์มในอนาคต) — แสดงต่อท้ายแบบทั่วไป ───
     const consumedFieldIds = new Set(
@@ -372,7 +386,7 @@ async function generateOutsourcedReportPdf(report, form, group, profile, dailySe
         return { cols: 3, rows: 4 };
     };
 
-    const drawPhotoSection = async (title, fields) => {
+    const collectFieldImages = async (fields) => {
         const images = [];
         for (const field of fields) {
             for (const meta of photosMap[field.fieldId] || []) {
@@ -384,7 +398,27 @@ async function generateOutsourcedReportPdf(report, form, group, profile, dailySe
                 }
             }
         }
+        return images;
+    };
 
+    const drawImageGrid = (images, cols, rows, gridTop, gridBottom, gap) => {
+        const cellWidth = (PAGE_SIZE[0] - 2 * MARGIN - gap * (cols - 1)) / cols;
+        const cellHeight = (gridTop - gridBottom - gap * (rows - 1)) / rows;
+        images.forEach((image, index) => {
+            const col = index % cols;
+            const row = Math.floor(index / cols);
+            const x = MARGIN + col * (cellWidth + gap);
+            const top = gridTop - row * (cellHeight + gap);
+            page.drawRectangle({ x, y: top - cellHeight, width: cellWidth, height: cellHeight, borderColor: rgb(0.8, 0.8, 0.8), borderWidth: 0.5 });
+            const scale = Math.min((cellWidth - 12) / image.width, (cellHeight - 12) / image.height);
+            const width = image.width * scale;
+            const height = image.height * scale;
+            page.drawImage(image, { x: x + (cellWidth - width) / 2, y: top - (cellHeight + height) / 2, width, height });
+        });
+    };
+
+    const drawPhotoSection = async (title, fields) => {
+        const images = await collectFieldImages(fields);
         if (!images.length) return;
 
         const gap = 12;
@@ -399,26 +433,121 @@ async function generateOutsourcedReportPdf(report, form, group, profile, dailySe
 
             addPage();
             drawLine(title, FONT_SIZE, rgb(0, 0, 0), true);
-            const cellWidth = (PAGE_SIZE[0] - 2 * MARGIN - gap * (cols - 1)) / cols;
-            const cellHeight = (gridTop - CONTENT_BOTTOM - gap * (rows - 1)) / rows;
-            pageImages.forEach((image, index) => {
-                const col = index % cols;
-                const row = Math.floor(index / cols);
-                const x = MARGIN + col * (cellWidth + gap);
-                const top = gridTop - row * (cellHeight + gap);
-                page.drawRectangle({ x, y: top - cellHeight, width: cellWidth, height: cellHeight, borderColor: rgb(0.8, 0.8, 0.8), borderWidth: 0.5 });
-                const scale = Math.min((cellWidth - 12) / image.width, (cellHeight - 12) / image.height);
-                const width = image.width * scale;
-                const height = image.height * scale;
-                page.drawImage(image, { x: x + (cellWidth - width) / 2, y: top - (cellHeight + height) / 2, width, height });
-            });
+            drawImageGrid(pageImages, cols, rows, gridTop, CONTENT_BOTTOM, gap);
+        }
+    };
+
+    // ─── หน้า "ข้อมูลการรายงานแต่ละครั้งของวันนั้น" — แทนที่หน้าภาพก่อนการปฏิบัติงานเดิม ───
+    const drawTwoColPlain = (leftText, rightText, fontSize) => {
+        const maxWidth = PAGE_SIZE[0] - 2 * MARGIN;
+        const gap = 24;
+        const colWidth = (maxWidth - gap) / 2;
+        const leftLines = wrapText(leftText, colWidth, fontSize);
+        const rightLines = wrapText(rightText, colWidth, fontSize);
+        const lineStep = fontSize + 6;
+        const lineCount = Math.max(leftLines.length, rightLines.length, 1);
+        if (y < CONTENT_BOTTOM + lineCount * lineStep) addPage();
+        const startY = y;
+        leftLines.forEach((line, index) => drawText(line, { x: MARGIN, y: startY - index * lineStep, size: fontSize, color: rgb(0, 0, 0) }));
+        rightLines.forEach((line, index) => drawText(line, { x: MARGIN + colWidth + gap, y: startY - index * lineStep, size: fontSize, color: rgb(0, 0, 0) }));
+        y -= lineCount * lineStep;
+    };
+    const drawFullWidthPlain = (text, fontSize) => {
+        const maxWidth = PAGE_SIZE[0] - 2 * MARGIN;
+        const lines = wrapText(text, maxWidth, fontSize);
+        const lineStep = fontSize + 6;
+        lines.forEach((line) => {
+            if (y < CONTENT_BOTTOM + lineStep) addPage();
+            drawText(line, { x: MARGIN, y, size: fontSize, color: rgb(0, 0, 0) });
+            y -= lineStep;
+        });
+    };
+
+    const drawDailyEntriesPage = (entries) => {
+        if (!entries?.length) return;
+        addPage();
+        drawLine('ข้อมูลการรายงานแต่ละครั้งของวันนั้น', FONT_SIZE, rgb(0, 0, 0), true);
+        y -= 4;
+
+        const maxWidth = PAGE_SIZE[0] - 2 * MARGIN;
+        const colWidth = (maxWidth - 24) / 2;
+        const measureEntryLines = (entry, size) => {
+            const row1 = Math.max(
+                wrapText(`ประเภทงาน : ${entry.type || '-'}`, colWidth, size).length,
+                wrapText(`โครงการ: ${entry.project || '-'}`, colWidth, size).length
+            );
+            const row2 = wrapText(`ชื่อสถานที่หรือจุดปฏิบัติงาน : ${entry.place || '-'}`, maxWidth, size).length;
+            const row3 = Math.max(
+                wrapText(`สถานะเครือข่าย : ${entry.network || '-'}`, colWidth, size).length,
+                wrapText(`สถานะไฟฟ้า : ${entry.power || '-'}`, colWidth, size).length
+            );
+            return row1 + row2 + row3;
+        };
+
+        const dividerGap = 10;
+        const availableHeight = y - CONTENT_BOTTOM;
+        const totalHeightFor = (fontSize) => {
+            const lineStep = fontSize + 6;
+            const linesTotal = entries.reduce((sum, entry) => sum + measureEntryLines(entry, fontSize), 0);
+            return linesTotal * lineStep + (entries.length - 1) * dividerGap;
+        };
+        let size = FONT_SIZE;
+        while (size > 6 && totalHeightFor(size) > availableHeight) size -= 0.5;
+
+        entries.forEach((entry, index) => {
+            drawTwoColPlain(`ประเภทงาน : ${entry.type || '-'}`, `โครงการ: ${entry.project || '-'}`, size);
+            drawFullWidthPlain(`ชื่อสถานที่หรือจุดปฏิบัติงาน : ${entry.place || '-'}`, size);
+            drawTwoColPlain(`สถานะเครือข่าย : ${entry.network || '-'}`, `สถานะไฟฟ้า : ${entry.power || '-'}`, size);
+            if (index < entries.length - 1) {
+                y -= dividerGap / 2;
+                page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_SIZE[0] - MARGIN, y }, thickness: 0.8, dashArray: [4, 3], color: rgb(0.6, 0.6, 0.6) });
+                y -= dividerGap / 2;
+            }
+        });
+    };
+
+    // ─── หน้าภาพก่อน/หลังดำเนินการ — รวมในหน้าเดียว แบ่งบน-ล่าง แทนหน้าแยกเดิม ───
+    const getHalfPhotoGrid = (count) => {
+        if (count <= 1) return { cols: 1, rows: 1 };
+        if (count <= 4) return { cols: 2, rows: 2 };
+        return { cols: 3, rows: 2 }; // สูงสุด 6 ภาพต่อครึ่งหน้า
+    };
+
+    const drawBeforeAfterPhotoPages = (beforeImages, afterImages) => {
+        const perHalf = 6;
+        const totalPages = Math.max(Math.ceil(beforeImages.length / perHalf), Math.ceil(afterImages.length / perHalf), 1);
+        if (!beforeImages.length && !afterImages.length) return;
+
+        const gap = 10;
+        const halfGap = 24;
+        const contentHeight = CONTENT_TOP - CONTENT_BOTTOM;
+        const halfHeight = (contentHeight - halfGap) / 2;
+
+        const drawHalf = (title, images, topY) => {
+            drawText(title, { x: MARGIN, y: topY, size: FONT_SIZE, color: rgb(0, 0, 0) }, true);
+            const gridTop = topY - FONT_SIZE - 10;
+            const gridBottom = topY - halfHeight;
+            if (!images.length) return;
+            const { cols, rows } = getHalfPhotoGrid(images.length);
+            drawImageGrid(images, cols, rows, gridTop, gridBottom, gap);
+        };
+
+        for (let pageIndex = 0; pageIndex < totalPages; pageIndex++) {
+            const beforeChunk = beforeImages.slice(pageIndex * perHalf, pageIndex * perHalf + perHalf);
+            const afterChunk = afterImages.slice(pageIndex * perHalf, pageIndex * perHalf + perHalf);
+            if (!beforeChunk.length && !afterChunk.length) continue;
+
+            addPage();
+            drawHalf('ภาพก่อนดำเนินการ', beforeChunk, CONTENT_TOP);
+            drawHalf('ภาพหลังดำเนินการ', afterChunk, CONTENT_TOP - halfHeight - halfGap);
         }
     };
 
     const beforeFields = imageFields.filter((field) => field.label.includes('ก่อนการปฏิบัติงาน'));
     const afterFields = imageFields.filter((field) => field.label.includes('หลังการปฏิบัติงาน'));
-    await drawPhotoSection('ภาพก่อนการปฏิบัติงาน', beforeFields);
-    await drawPhotoSection('ภาพหลังการปฏิบัติงาน', afterFields);
+
+    drawDailyEntriesPage(dailySections?.entries || []);
+    drawBeforeAfterPhotoPages(await collectFieldImages(beforeFields), await collectFieldImages(afterFields));
     for (const field of imageFields.filter((item) => !beforeFields.includes(item) && !afterFields.includes(item))) {
         await drawPhotoSection(field.label, [field]);
     }

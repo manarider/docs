@@ -5,10 +5,11 @@ const OutsourcedReportFormVersion = require('../../models/OutsourcedReportFormVe
 const { ensureFormVersion } = require('./formVersionHelper');
 const OutsourcedReport = require('../../models/OutsourcedReport');
 const OutsourcedUserProfile = require('../../models/OutsourcedUserProfile');
+const OutsourcedCommitteeMember = require('../../models/OutsourcedCommitteeMember');
 const { logAction, getIp } = require('../../utils/auditHelper');
 const { sendSuccess, sendError } = require('../../utils/response');
 const logger = require('../../utils/logger');
-const { moveFilesByField, cleanupTmpFiles, resizePhotoMetas, isSafeOutsourcedPath } = require('./outsourced.fileHelper');
+const { moveFilesByField, cleanupTmpFiles, resizePhotoMetas, isSafeOutsourcedPath, removePhotoFiles } = require('./outsourced.fileHelper');
 const { resizeImageFile } = require('../../utils/imageResize');
 const { generateOutsourcedReportPdf } = require('./outsourced.pdfGenerator');
 const { getFiscalYearRange } = require('../../utils/fiscalYear');
@@ -49,13 +50,14 @@ function collectSearchPaths(fields, paths, numericPaths) {
     }
 }
 
-function validateAndCleanFields(fields, values, uploadedFiles, cleanValues, allowedImageFields = new Map(), depth = 0) {
+function validateAndCleanFields(fields, values, uploadedFiles, cleanValues, allowedImageFields = new Map(), depth = 0, existingImageFieldIds = new Set()) {
     if (depth > 3) return 'ฟอร์มย่อยซ้อนกันลึกเกินกำหนด';
     for (const field of fields || []) {
         const value = values[field.fieldId];
         if (field.type === 'image') {
             allowedImageFields.set(field.fieldId, field.maxImages || 4);
-            if (field.required && !uploadedFiles.some((file) => file.fieldname === field.fieldId)) return `กรุณากรอก "${field.label}"`;
+            const hasUpload = uploadedFiles.some((file) => file.fieldname === field.fieldId);
+            if (field.required && !hasUpload && !existingImageFieldIds.has(field.fieldId)) return `กรุณากรอก "${field.label}"`;
             continue;
         }
         if (field.type === 'table') {
@@ -107,7 +109,7 @@ function validateAndCleanFields(fields, values, uploadedFiles, cleanValues, allo
                 const legacy = field.radioSubFields?.get ? field.radioSubFields.get(value) : field.radioSubFields?.[value];
                 if (legacy) children = [legacy];
             }
-            const error = validateAndCleanFields(children, values, uploadedFiles, cleanValues, allowedImageFields, depth + 1);
+            const error = validateAndCleanFields(children, values, uploadedFiles, cleanValues, allowedImageFields, depth + 1, existingImageFieldIds);
             if (error) return error;
             continue;
         }
@@ -269,6 +271,85 @@ async function createReport(req, res) {
     }
 }
 
+/**
+ * PATCH /api/outsourced/groups/:groupId/reports/:reportId
+ * แก้ไขข้อมูลรายงานที่บันทึกไปแล้ว — ใช้ฟอร์มเวอร์ชันเดิมของรายงานนั้นเสมอ (ไม่เปลี่ยนฟอร์ม/วันที่)
+ * ฟิลด์รูปภาพ: ถ้าไม่อัปโหลดไฟล์ใหม่สำหรับฟิลด์ใด จะคงรูปเดิมของฟิลด์นั้นไว้ — ถ้าอัปโหลดใหม่ จะแทนที่รูปเดิมทั้งหมดของฟิลด์นั้น
+ */
+async function updateReport(req, res) {
+    const uploadedFiles = req.files || [];
+    try {
+        const { groupId, reportId } = req.params;
+        const { values } = req.body;
+
+        const report = await OutsourcedReport.findOne({ _id: reportId, group_id: groupId });
+        if (!report) { cleanupTmpFiles(uploadedFiles); return sendError(res, 404, 'ไม่พบรายงาน'); }
+
+        const isOwner = String(report.submitted_by_user) === String(req.user.userId);
+        if (!isOwner && !canSeeAllReports(req.user)) {
+            cleanupTmpFiles(uploadedFiles);
+            return sendError(res, 403, 'คุณไม่มีสิทธิ์แก้ไขรายงานนี้');
+        }
+
+        const formVersion = report.form_version
+            ? await OutsourcedReportFormVersion.findOne({ form_id: report.form_id, version: report.form_version }).lean()
+            : null;
+        const form = formVersion || await OutsourcedReportForm.findOne({ _id: report.form_id, group_id: groupId }).lean();
+        if (!form) { cleanupTmpFiles(uploadedFiles); return sendError(res, 404, 'ไม่พบฟอร์มการรายงาน'); }
+
+        let parsedValues = {};
+        try {
+            parsedValues = typeof values === 'string' ? JSON.parse(values) : (values || {});
+        } catch {
+            cleanupTmpFiles(uploadedFiles);
+            return sendError(res, 400, 'รูปแบบข้อมูลฟอร์มไม่ถูกต้อง');
+        }
+
+        const existingImageFieldIds = new Set(report.photos ? Array.from(report.photos.keys()) : []);
+        const cleanValues = {};
+        const allowedImageFields = new Map();
+        const validationError = validateAndCleanFields(form.fields, parsedValues, uploadedFiles, cleanValues, allowedImageFields, 0, existingImageFieldIds);
+        if (validationError) { cleanupTmpFiles(uploadedFiles); return sendError(res, 400, validationError); }
+        const uploadCounts = new Map();
+        for (const file of uploadedFiles) {
+            const maxImages = allowedImageFields.get(file.fieldname);
+            if (!maxImages) { cleanupTmpFiles(uploadedFiles); return sendError(res, 400, 'พบรูปภาพที่ไม่ได้อยู่ในฟอร์มย่อยที่เลือก'); }
+            const count = (uploadCounts.get(file.fieldname) || 0) + 1;
+            if (count > maxImages) { cleanupTmpFiles(uploadedFiles); return sendError(res, 400, `แนบรูปได้ไม่เกิน ${maxImages} รูปสำหรับฟิลด์นี้`); }
+            uploadCounts.set(file.fieldname, count);
+        }
+
+        const newPhotosByField = moveFilesByField(uploadedFiles, groupId);
+        await resizePhotoMetas(newPhotosByField);
+
+        const oldMetasToRemove = [];
+        for (const fieldId of Object.keys(newPhotosByField)) {
+            oldMetasToRemove.push(...(report.photos.get(fieldId) || []));
+            report.photos.set(fieldId, newPhotosByField[fieldId]);
+        }
+
+        report.values = cleanValues;
+        report.markModified('values');
+        await report.save();
+        removePhotoFiles(oldMetasToRemove);
+
+        await logAction({
+            userId: req.user.userId, username: req.user.username,
+            action: 'UPDATE', module: 'OUTSOURCED', resourceId: report._id,
+            ipAddress: getIp(req), userAgent: req.headers['user-agent'],
+            details: { type: 'report', groupId },
+        });
+
+        const result = report.toObject();
+        delete result.photos;
+        return sendSuccess(res, result, 'แก้ไขรายงานเรียบร้อย');
+    } catch (err) {
+        cleanupTmpFiles(uploadedFiles);
+        logger.error('[Outsourced] updateReport error:', err.message);
+        return sendError(res, 500, 'เกิดข้อผิดพลาด');
+    }
+}
+
 async function previewReportImage(req, res) {
     const uploadedFiles = req.files || [];
     if (uploadedFiles.length !== 1) {
@@ -348,6 +429,7 @@ async function viewReportPhoto(req, res) {
 /**
  * รวมข้อมูล "สรุปการปฏิบัติงาน" / "ปัญหา/อุปสรรค" / "งานที่ต้องติดตาม" จากทุกรายงาน
  * ที่ถูกบันทึกในวันเดียวกัน (ตามเขตเวลา Asia/Bangkok) ของกลุ่มงานเดียวกัน เรียงตามลำดับเวลาบันทึก
+ * รวมถึงสรุปฟิลด์หลักของแต่ละรายงาน (entries) สำหรับแสดงในหน้าที่ 2
  */
 async function collectDailyTableSections(groupId, reportDate) {
     const dayStart = dayjs(reportDate).tz('Asia/Bangkok').startOf('day');
@@ -359,6 +441,7 @@ async function collectDailyTableSections(groupId, reportDate) {
     }).sort({ createdAt: 1 }).lean();
 
     const normalizeLabel = (label) => String(label || '').replace(/\s+/g, '');
+    const findField = (fields, matcher) => (fields || []).find((field) => matcher(normalizeLabel(field.label)));
     const findTableField = (fields, matcher) => (fields || []).find((field) => field.type === 'table' && matcher(normalizeLabel(field.label)));
     const extractRows = (field, values) => {
         if (!field) return [];
@@ -366,6 +449,11 @@ async function collectDailyTableSections(groupId, reportDate) {
         const columnId = field.tableColumns?.[0]?.columnId;
         if (!Array.isArray(rows) || !columnId) return [];
         return rows.map((row) => String(row[columnId] ?? '').trim()).filter((text) => text !== '');
+    };
+    const formatSimpleValue = (field, val) => {
+        if (!field) return '';
+        if (field.type === 'checkbox') return Array.isArray(val) ? val.join(', ') : '';
+        return val === undefined || val === null ? '' : String(val);
     };
 
     const formCache = new Map();
@@ -383,6 +471,7 @@ async function collectDailyTableSections(groupId, reportDate) {
     const summary = [];
     const problems = [];
     const followUps = [];
+    const entries = [];
     for (const rep of sameDayReports) {
         const repForm = await resolveForm(rep);
         if (!repForm) continue;
@@ -390,9 +479,22 @@ async function collectDailyTableSections(groupId, reportDate) {
         summary.push(...extractRows(findTableField(repForm.fields, (l) => l === 'สรุปการปฏิบัติงาน'), values));
         problems.push(...extractRows(findTableField(repForm.fields, (l) => l.startsWith('ปัญหา/อุปสรรค')), values));
         followUps.push(...extractRows(findTableField(repForm.fields, (l) => l.startsWith('งานที่ต้องติดตาม')), values));
+
+        const typeField = findField(repForm.fields, (l) => l === 'ประเภทงาน');
+        const projectField = findField(repForm.fields, (l) => l === 'โครงการ');
+        const placeField = findField(repForm.fields, (l) => l === 'ชื่อสถานที่หรือจุดปฏิบัติงาน');
+        const networkField = findField(repForm.fields, (l) => l === 'สถานะเครือข่าย');
+        const powerField = findField(repForm.fields, (l) => l === 'สถานะไฟฟ้า');
+        entries.push({
+            type: formatSimpleValue(typeField, values[typeField?.fieldId]),
+            project: formatSimpleValue(projectField, values[projectField?.fieldId]),
+            place: formatSimpleValue(placeField, values[placeField?.fieldId]),
+            network: formatSimpleValue(networkField, values[networkField?.fieldId]),
+            power: formatSimpleValue(powerField, values[powerField?.fieldId]),
+        });
     }
 
-    return { summary, problems, followUps };
+    return { summary, problems, followUps, entries };
 }
 
 /**
@@ -414,7 +516,8 @@ async function downloadReportPdf(req, res) {
         if (!form) return sendError(res, 404, 'ไม่พบฟอร์มการรายงาน');
         const profile = await OutsourcedUserProfile.findOne({ user_id: report.submitted_by_user }).lean();
         const dailySections = await collectDailyTableSections(groupId, report.report_date);
-        const pdfBytes = await generateOutsourcedReportPdf(report, form, group, profile, dailySections);
+        const committee = await OutsourcedCommitteeMember.findOne({ group_id: groupId }).sort({ order: 1, createdAt: 1 }).lean();
+        const pdfBytes = await generateOutsourcedReportPdf(report, form, group, profile, dailySections, committee);
 
         await logAction({
             userId: req.user.userId, username: req.user.username,
@@ -432,4 +535,4 @@ async function downloadReportPdf(req, res) {
     }
 }
 
-module.exports = { listReports, getReport, createReport, previewReportImage, deleteReport, viewReportPhoto, downloadReportPdf, validateAndCleanFields };
+module.exports = { listReports, getReport, createReport, updateReport, previewReportImage, deleteReport, viewReportPhoto, downloadReportPdf, validateAndCleanFields };

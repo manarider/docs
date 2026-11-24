@@ -51,6 +51,17 @@ function cleanupTmpFiles(files) {
     });
 }
 
+/**
+ * ลบไฟล์รูปที่บันทึกถาวรแล้วออกจากดิสก์ (ใช้ตอนแก้ไขรายงานแล้วแทนที่รูปเดิม)
+ */
+function removePhotoFiles(metas) {
+    for (const meta of metas || []) {
+        if (meta?.file_path && isSafeOutsourcedPath(meta.file_path)) {
+            try { fs.unlinkSync(meta.file_path); } catch { /* ignore */ }
+        }
+    }
+}
+
 async function resizePhotoMetas(photosByField) {
     for (const metas of Object.values(photosByField)) {
         for (const meta of metas) {
@@ -71,4 +82,5 @@ module.exports = {
     moveFilesByField,
     cleanupTmpFiles,
     resizePhotoMetas,
+    removePhotoFiles,
 };

@@ -236,6 +236,8 @@ export default function OutsourcedReports() {
     const [reports, setReports] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
+    const [editTarget, setEditTarget] = useState(null);
+    const [editFormDef, setEditFormDef] = useState(null);
     const [selectedFormId, setSelectedFormId] = useState('');
     const [now, setNow] = useState(new Date());
     const [values, setValues] = useState({});
@@ -249,14 +251,15 @@ export default function OutsourcedReports() {
     const [page, setPage] = useState(1);
     const [pagination, setPagination] = useState(null);
 
-    const selectedForm = forms.find((f) => f._id === selectedFormId) || null;
+    const selectedForm = editTarget ? editFormDef : (forms.find((f) => f._id === selectedFormId) || null);
 
     // นาฬิกาบอกวันที่/เวลาปัจจุบัน แสดงด้านบนฟอร์มแบบ real-time (ค่าจริงที่บันทึกจะยึดตามเวลา server ตอนกดบันทึก)
+    // ตอนแก้ไขรายงานเดิม ให้คงวันที่เดิมไว้ ไม่เดินนาฬิกา เพราะการแก้ไขไม่เปลี่ยนวันที่ของรายงาน
     useEffect(() => {
-        if (!showForm) return;
+        if (!showForm || editTarget) return;
         const timer = setInterval(() => setNow(new Date()), 1000);
         return () => clearInterval(timer);
-    }, [showForm]);
+    }, [showForm, editTarget]);
 
     useEffect(() => {
         const timer = setTimeout(() => { setPage(1); setSearch(searchInput.trim()); }, 350);
@@ -290,11 +293,35 @@ export default function OutsourcedReports() {
     const openCreate = () => {
         const activeForms = forms.filter((f) => f.status === 'active');
         if (activeForms.length === 0) return toast.error('กลุ่มงานนี้ยังไม่มีฟอร์มการรายงานที่ใช้งานได้');
+        setEditTarget(null);
+        setEditFormDef(null);
         setSelectedFormId(activeForms[0]._id);
         setNow(new Date());
         setValues({});
         setFiles({});
         setShowForm(true);
+    };
+
+    const openEdit = async (r) => {
+        try {
+            const { data } = await api.get(`/outsourced/groups/${groupId}/reports/${r._id}`);
+            const rep = data.data;
+            setEditTarget(rep);
+            setEditFormDef(rep.form_id || null);
+            setSelectedFormId(rep.form_id?._id || '');
+            setNow(new Date(rep.report_date));
+            setValues(rep.values || {});
+            setFiles({});
+            setShowForm(true);
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'โหลดข้อมูลรายงานไม่สำเร็จ');
+        }
+    };
+
+    const closeForm = () => {
+        setShowForm(false);
+        setEditTarget(null);
+        setEditFormDef(null);
     };
 
     const handleSave = async () => {
@@ -304,20 +331,26 @@ export default function OutsourcedReports() {
         setUploadProgress(0);
         try {
             const fd = new FormData();
-            fd.append('form_id', selectedFormId);
+            if (!editTarget) fd.append('form_id', selectedFormId);
             fd.append('values', JSON.stringify(values));
             Object.entries(files).forEach(([fieldId, fileList]) => {
                 Array.from(fileList || []).forEach((file) => fd.append(fieldId, file));
             });
 
-            await api.post(`/outsourced/groups/${groupId}/reports`, fd, {
+            const requestConfig = {
                 headers: { 'Content-Type': 'multipart/form-data' },
                 onUploadProgress: (event) => {
                     if (event.total) setUploadProgress(Math.round((event.loaded / event.total) * 100));
                 },
-            });
-            toast.success('บันทึกรายงานเรียบร้อย');
-            setShowForm(false);
+            };
+            if (editTarget) {
+                await api.patch(`/outsourced/groups/${groupId}/reports/${editTarget._id}`, fd, requestConfig);
+                toast.success('แก้ไขรายงานเรียบร้อย');
+            } else {
+                await api.post(`/outsourced/groups/${groupId}/reports`, fd, requestConfig);
+                toast.success('บันทึกรายงานเรียบร้อย');
+            }
+            closeForm();
             load();
         } catch (err) {
             toast.error(err.response?.data?.message || 'เกิดข้อผิดพลาด');
@@ -406,7 +439,10 @@ export default function OutsourcedReports() {
                                                 ดู PDF
                                             </a>
                                             {(canSeeAll || String(r.submitted_by_user) === String(user?.userId)) && (
-                                                <button onClick={() => handleDelete(r)} className="text-red-600 hover:underline text-xs">ลบ</button>
+                                                <>
+                                                    <button onClick={() => openEdit(r)} className="text-amber-600 hover:underline text-xs">แก้ไข</button>
+                                                    <button onClick={() => handleDelete(r)} className="text-red-600 hover:underline text-xs">ลบ</button>
+                                                </>
                                             )}
                                         </div>
                                     </td>
@@ -433,29 +469,41 @@ export default function OutsourcedReports() {
             {showForm && (
                 <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-                        <h3 className="font-bold text-gray-800">บันทึกรายงานการปฏิบัติงาน</h3>
+                        <h3 className="font-bold text-gray-800">{editTarget ? 'แก้ไขรายงานการปฏิบัติงาน' : 'บันทึกรายงานการปฏิบัติงาน'}</h3>
 
                         <div className="bg-orange-50 border border-orange-100 rounded-lg px-3 py-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-600">
                             <span>📅 วันที่: <strong className="text-gray-800">{now.toLocaleDateString('th-TH', { dateStyle: 'long' })}</strong></span>
-                            <span>🕐 เวลา: <strong className="text-gray-800">{now.toLocaleTimeString('th-TH')}</strong></span>
-                            <span>👤 ผู้บันทึก: <strong className="text-gray-800">{user?.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user?.username}</strong></span>
+                            {!editTarget && <span>🕐 เวลา: <strong className="text-gray-800">{now.toLocaleTimeString('th-TH')}</strong></span>}
+                            <span>👤 ผู้บันทึก: <strong className="text-gray-800">{editTarget ? (editTarget.submitted_by_name || editTarget.submitted_by_username) : (user?.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user?.username)}</strong></span>
                         </div>
 
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">ฟอร์มการรายงาน *</label>
-                            <select
-                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                value={selectedFormId}
-                                onChange={(e) => { setSelectedFormId(e.target.value); setValues({}); setFiles({}); }}
-                            >
-                                {forms.filter((f) => f.status === 'active').map((f) => (
-                                    <option key={f._id} value={f._id}>{f.name}</option>
-                                ))}
-                            </select>
-                        </div>
+                        {editTarget ? (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">ฟอร์มการรายงาน</label>
+                                <p className="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">{editFormDef?.name || '-'}</p>
+                            </div>
+                        ) : (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">ฟอร์มการรายงาน *</label>
+                                <select
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                    value={selectedFormId}
+                                    onChange={(e) => { setSelectedFormId(e.target.value); setValues({}); setFiles({}); }}
+                                >
+                                    {forms.filter((f) => f.status === 'active').map((f) => (
+                                        <option key={f._id} value={f._id}>{f.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
 
                         {selectedForm && (
                             <div className="space-y-3 pt-2 border-t border-gray-100">
+                                {editTarget && (
+                                    <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                                        แก้ไขฟิลด์รูปภาพ: หากไม่อัปโหลดรูปใหม่ จะคงรูปเดิมไว้ — ถ้าอัปโหลดรูปใหม่สำหรับฟิลด์ใด จะแทนที่รูปเดิมของฟิลด์นั้นทั้งหมด
+                                    </p>
+                                )}
                                 {selectedForm.fields.map((field) => <FieldInput key={field.fieldId} field={field} values={values} setValues={setValues} files={files} setFiles={setFiles} groupId={groupId} />)}
                             </div>
                         )}
@@ -472,7 +520,7 @@ export default function OutsourcedReports() {
                         )}
 
                         <div className="flex gap-3 justify-end pt-2">
-                            <button onClick={() => setShowForm(false)} disabled={saving} className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed">ยกเลิก</button>
+                            <button onClick={closeForm} disabled={saving} className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed">ยกเลิก</button>
                             <button onClick={handleSave} disabled={saving} className="bg-primary text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-primary-dark transition disabled:opacity-60">
                                 {saving ? 'กำลังบันทึก...' : 'บันทึก'}
                             </button>
