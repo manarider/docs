@@ -8,6 +8,7 @@ const outsourcedCommitteeMemberSchema = new mongoose.Schema(
     {
         group_id: { type: mongoose.Schema.Types.ObjectId, ref: 'OutsourcedGroup', required: true },
         name: { type: String, required: true, trim: true, maxlength: 200 },
+        position: { type: String, trim: true, maxlength: 400, default: '' }, // ตำแหน่ง — รองรับสูงสุด 2 บรรทัด (คั่นด้วย \n)
         order: { type: Number, default: 0 },
         created_by: { type: mongoose.Schema.Types.ObjectId, required: true },
     },

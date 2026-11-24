@@ -5,6 +5,14 @@ const { sendSuccess, sendError } = require('../../utils/response');
 const logger = require('../../utils/logger');
 
 /**
+ * ตัดช่องว่างหัว-ท้ายของแต่ละบรรทัด ทิ้งบรรทัดว่าง และจำกัดไว้สูงสุด 2 บรรทัด
+ */
+function sanitizePosition(raw) {
+    const lines = String(raw || '').split('\n').map((line) => line.trim()).filter((line) => line !== '');
+    return lines.slice(0, 2).join('\n');
+}
+
+/**
  * GET /api/outsourced/groups/:groupId/committee
  * รายชื่อคณะกรรมการตรวจรับของกลุ่มงาน — จัดการได้เฉพาะ admin (บังคับที่ route)
  */
@@ -30,6 +38,7 @@ async function createCommitteeMember(req, res) {
         const { groupId } = req.params;
         const name = String(req.body.name || '').trim();
         if (!name) return sendError(res, 400, 'กรุณาระบุชื่อคณะกรรมการตรวจรับ');
+        const position = sanitizePosition(req.body.position);
 
         const group = await OutsourcedGroup.findOne({ _id: groupId, deleted_at: null }).lean();
         if (!group) return sendError(res, 404, 'ไม่พบกลุ่มงาน');
@@ -38,6 +47,7 @@ async function createCommitteeMember(req, res) {
         const member = await OutsourcedCommitteeMember.create({
             group_id: groupId,
             name,
+            position,
             order: (lastOrder?.order ?? -1) + 1,
             created_by: req.user.userId,
         });
@@ -68,6 +78,7 @@ async function updateCommitteeMember(req, res) {
         const name = String(req.body.name || '').trim();
         if (!name) return sendError(res, 400, 'กรุณาระบุชื่อคณะกรรมการตรวจรับ');
         member.name = name;
+        member.position = sanitizePosition(req.body.position);
         await member.save();
 
         await logAction({

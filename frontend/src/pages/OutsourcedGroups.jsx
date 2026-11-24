@@ -24,9 +24,11 @@ export default function OutsourcedGroups() {
     const [committeeMembers, setCommitteeMembers] = useState([]);
     const [committeeLoading, setCommitteeLoading] = useState(false);
     const [newMemberName, setNewMemberName] = useState('');
+    const [newMemberPosition, setNewMemberPosition] = useState('');
     const [memberSaving, setMemberSaving] = useState(false);
     const [editingMemberId, setEditingMemberId] = useState(null);
     const [editingMemberName, setEditingMemberName] = useState('');
+    const [editingMemberPosition, setEditingMemberPosition] = useState('');
 
     // โปรไฟล์เจ้าหน้าที่ (ตำแหน่งหน้าที่ / เลขที่บันทึกตกลงจ้าง) — เฉพาะ admin แก้ไขของผู้อื่นได้
     const [profileGroup, setProfileGroup] = useState(null);
@@ -101,6 +103,7 @@ export default function OutsourcedGroups() {
     const openCommittee = (g) => {
         setCommitteeGroup(g);
         setNewMemberName('');
+        setNewMemberPosition('');
         setEditingMemberId(null);
         loadCommittee(g._id);
     };
@@ -110,12 +113,19 @@ export default function OutsourcedGroups() {
         setCommitteeMembers([]);
     };
 
+    // จำกัดช่องตำแหน่งไว้สูงสุด 2 บรรทัด
+    const limitTwoLines = (value) => {
+        const lines = value.split('\n');
+        return lines.length > 2 ? lines.slice(0, 2).join('\n') : value;
+    };
+
     const handleAddMember = async () => {
         if (!newMemberName.trim()) return toast.error('กรุณาระบุชื่อคณะกรรมการตรวจรับ');
         setMemberSaving(true);
         try {
-            await api.post(`/outsourced/groups/${committeeGroup._id}/committee`, { name: newMemberName.trim() });
+            await api.post(`/outsourced/groups/${committeeGroup._id}/committee`, { name: newMemberName.trim(), position: newMemberPosition });
             setNewMemberName('');
+            setNewMemberPosition('');
             toast.success('เพิ่มรายชื่อเรียบร้อย');
             loadCommittee(committeeGroup._id);
         } catch (err) {
@@ -128,13 +138,14 @@ export default function OutsourcedGroups() {
     const startEditMember = (member) => {
         setEditingMemberId(member._id);
         setEditingMemberName(member.name);
+        setEditingMemberPosition(member.position || '');
     };
 
     const handleSaveMemberEdit = async () => {
         if (!editingMemberName.trim()) return toast.error('กรุณาระบุชื่อคณะกรรมการตรวจรับ');
         setMemberSaving(true);
         try {
-            await api.patch(`/outsourced/groups/${committeeGroup._id}/committee/${editingMemberId}`, { name: editingMemberName.trim() });
+            await api.patch(`/outsourced/groups/${committeeGroup._id}/committee/${editingMemberId}`, { name: editingMemberName.trim(), position: editingMemberPosition });
             setEditingMemberId(null);
             toast.success('อัปเดตรายชื่อเรียบร้อย');
             loadCommittee(committeeGroup._id);
@@ -306,7 +317,7 @@ export default function OutsourcedGroups() {
 
             {committeeGroup && (
                 <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-4">
                         <div className="flex items-start justify-between">
                             <div>
                                 <h3 className="font-bold text-gray-800">คณะกรรมการตรวจรับ</h3>
@@ -320,26 +331,41 @@ export default function OutsourcedGroups() {
                         ) : (
                             <div className="space-y-2 max-h-72 overflow-y-auto">
                                 {committeeMembers.map((m) => (
-                                    <div key={m._id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
+                                    <div key={m._id} className="bg-gray-50 rounded-lg px-3 py-2">
                                         {editingMemberId === m._id ? (
-                                            <>
+                                            <div className="space-y-2">
                                                 <input
                                                     autoFocus
-                                                    className="flex-1 border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                                                    className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                                                     value={editingMemberName}
                                                     onChange={(e) => setEditingMemberName(e.target.value)}
                                                     maxLength={200}
-                                                    onKeyDown={(e) => e.key === 'Enter' && handleSaveMemberEdit()}
+                                                    placeholder="ชื่อ-นามสกุล"
                                                 />
-                                                <button onClick={handleSaveMemberEdit} disabled={memberSaving} className="text-green-600 hover:underline text-xs shrink-0">บันทึก</button>
-                                                <button onClick={() => setEditingMemberId(null)} className="text-gray-500 hover:underline text-xs shrink-0">ยกเลิก</button>
-                                            </>
+                                                <textarea
+                                                    className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                                                    rows={2}
+                                                    value={editingMemberPosition}
+                                                    onChange={(e) => setEditingMemberPosition(limitTwoLines(e.target.value))}
+                                                    maxLength={400}
+                                                    placeholder="ตำแหน่ง (ได้สูงสุด 2 บรรทัด)"
+                                                />
+                                                <div className="flex gap-3 justify-end">
+                                                    <button onClick={() => setEditingMemberId(null)} className="text-gray-500 hover:underline text-xs shrink-0">ยกเลิก</button>
+                                                    <button onClick={handleSaveMemberEdit} disabled={memberSaving} className="text-green-600 hover:underline text-xs font-medium shrink-0">บันทึก</button>
+                                                </div>
+                                            </div>
                                         ) : (
-                                            <>
-                                                <span className="flex-1 text-sm text-gray-800">{m.name}</span>
+                                            <div className="flex items-start gap-2">
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm text-gray-800">{m.name}</p>
+                                                    {m.position && (
+                                                        <p className="text-xs text-gray-500 whitespace-pre-line">{m.position}</p>
+                                                    )}
+                                                </div>
                                                 <button onClick={() => startEditMember(m)} className="text-blue-600 hover:underline text-xs shrink-0">แก้ไข</button>
                                                 <button onClick={() => handleDeleteMember(m)} className="text-red-600 hover:underline text-xs shrink-0">ลบ</button>
-                                            </>
+                                            </div>
                                         )}
                                     </div>
                                 ))}
@@ -349,22 +375,31 @@ export default function OutsourcedGroups() {
                             </div>
                         )}
 
-                        <div className="flex gap-2 pt-2 border-t border-gray-100">
+                        <div className="space-y-2 pt-2 border-t border-gray-100">
                             <input
-                                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                                 value={newMemberName}
                                 onChange={(e) => setNewMemberName(e.target.value)}
                                 placeholder="ชื่อ-นามสกุล คณะกรรมการตรวจรับ"
                                 maxLength={200}
-                                onKeyDown={(e) => e.key === 'Enter' && handleAddMember()}
                             />
-                            <button
-                                onClick={handleAddMember}
-                                disabled={memberSaving}
-                                className="bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-dark transition disabled:opacity-60 shrink-0"
-                            >
-                                + เพิ่ม
-                            </button>
+                            <textarea
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                                rows={2}
+                                value={newMemberPosition}
+                                onChange={(e) => setNewMemberPosition(limitTwoLines(e.target.value))}
+                                placeholder="ตำแหน่ง (ได้สูงสุด 2 บรรทัด) เช่น ประธานกรรมการตรวจรับพัสดุ"
+                                maxLength={400}
+                            />
+                            <div className="flex justify-end">
+                                <button
+                                    onClick={handleAddMember}
+                                    disabled={memberSaving}
+                                    className="bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-dark transition disabled:opacity-60 shrink-0"
+                                >
+                                    + เพิ่ม
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
