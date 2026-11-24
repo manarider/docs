@@ -346,6 +346,56 @@ async function viewReportPhoto(req, res) {
 }
 
 /**
+ * รวมข้อมูล "สรุปการปฏิบัติงาน" / "ปัญหา/อุปสรรค" / "งานที่ต้องติดตาม" จากทุกรายงาน
+ * ที่ถูกบันทึกในวันเดียวกัน (ตามเขตเวลา Asia/Bangkok) ของกลุ่มงานเดียวกัน เรียงตามลำดับเวลาบันทึก
+ */
+async function collectDailyTableSections(groupId, reportDate) {
+    const dayStart = dayjs(reportDate).tz('Asia/Bangkok').startOf('day');
+    const dayEnd = dayStart.add(1, 'day');
+
+    const sameDayReports = await OutsourcedReport.find({
+        group_id: groupId,
+        report_date: { $gte: dayStart.toDate(), $lt: dayEnd.toDate() },
+    }).sort({ createdAt: 1 }).lean();
+
+    const normalizeLabel = (label) => String(label || '').replace(/\s+/g, '');
+    const findTableField = (fields, matcher) => (fields || []).find((field) => field.type === 'table' && matcher(normalizeLabel(field.label)));
+    const extractRows = (field, values) => {
+        if (!field) return [];
+        const rows = values[field.fieldId];
+        const columnId = field.tableColumns?.[0]?.columnId;
+        if (!Array.isArray(rows) || !columnId) return [];
+        return rows.map((row) => String(row[columnId] ?? '').trim()).filter((text) => text !== '');
+    };
+
+    const formCache = new Map();
+    const resolveForm = async (rep) => {
+        const key = `${rep.form_id}:${rep.form_version || ''}`;
+        if (formCache.has(key)) return formCache.get(key);
+        const version = rep.form_version
+            ? await OutsourcedReportFormVersion.findOne({ form_id: rep.form_id, version: rep.form_version }).lean()
+            : null;
+        const resolved = version || await OutsourcedReportForm.findOne({ _id: rep.form_id }).lean();
+        formCache.set(key, resolved);
+        return resolved;
+    };
+
+    const summary = [];
+    const problems = [];
+    const followUps = [];
+    for (const rep of sameDayReports) {
+        const repForm = await resolveForm(rep);
+        if (!repForm) continue;
+        const values = rep.values || {};
+        summary.push(...extractRows(findTableField(repForm.fields, (l) => l === 'สรุปการปฏิบัติงาน'), values));
+        problems.push(...extractRows(findTableField(repForm.fields, (l) => l.startsWith('ปัญหา/อุปสรรค')), values));
+        followUps.push(...extractRows(findTableField(repForm.fields, (l) => l.startsWith('งานที่ต้องติดตาม')), values));
+    }
+
+    return { summary, problems, followUps };
+}
+
+/**
  * GET /api/outsourced/groups/:groupId/reports/:reportId/pdf
  */
 async function downloadReportPdf(req, res) {
@@ -363,7 +413,8 @@ async function downloadReportPdf(req, res) {
         const form = formVersion || await OutsourcedReportForm.findOne({ _id: report.form_id, group_id: groupId }).lean();
         if (!form) return sendError(res, 404, 'ไม่พบฟอร์มการรายงาน');
         const profile = await OutsourcedUserProfile.findOne({ user_id: report.submitted_by_user }).lean();
-        const pdfBytes = await generateOutsourcedReportPdf(report, form, group, profile);
+        const dailySections = await collectDailyTableSections(groupId, report.report_date);
+        const pdfBytes = await generateOutsourcedReportPdf(report, form, group, profile, dailySections);
 
         await logAction({
             userId: req.user.userId, username: req.user.username,

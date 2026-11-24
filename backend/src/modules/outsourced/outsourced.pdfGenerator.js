@@ -30,9 +30,10 @@ async function embedImageFromFile(pdfDoc, filePath) {
  * @param {Object} form - OutsourcedReportForm (plain object)
  * @param {Object} group - OutsourcedGroup (plain object)
  * @param {Object} [profile] - OutsourcedUserProfile ของผู้ส่งมอบงาน (plain object) — ตำแหน่งหน้าที่ / เลขที่บันทึกตกลงจ้าง
+ * @param {Object} [dailySections] - { summary, problems, followUps } รวมจากทุกรายงานวันเดียวกัน (string[])
  * @returns {Promise<Buffer>}
  */
-async function generateOutsourcedReportPdf(report, form, group, profile) {
+async function generateOutsourcedReportPdf(report, form, group, profile, dailySections) {
     const pdfDoc = await PDFDocument.create();
     pdfDoc.registerFontkit(fontkit);
 
@@ -230,18 +231,6 @@ async function generateOutsourcedReportPdf(report, form, group, profile) {
         y -= lineCount * (size + 8);
     };
 
-    const COL_GAP = 24;
-    const COL_WIDTH = (PAGE_SIZE[0] - 2 * MARGIN - COL_GAP) / 2;
-    const drawInfoRow = (leftSegments, rightSegments, size = FONT_SIZE) => {
-        const leftCount = wrapText(leftSegments.map((segment) => segment.text).join(''), COL_WIDTH, size).length || 1;
-        const rightCount = wrapText(rightSegments.map((segment) => segment.text).join(''), COL_WIDTH, size).length || 1;
-        const lineCount = Math.max(leftCount, rightCount);
-        if (y < CONTENT_BOTTOM + lineCount * (size + 8)) addPage();
-        drawRichLine(MARGIN, y, COL_WIDTH, leftSegments, size);
-        drawRichLine(MARGIN + COL_WIDTH + COL_GAP, y, COL_WIDTH, rightSegments, size);
-        y -= lineCount * (size + 8);
-    };
-
     const drawDivider = () => {
         if (y < CONTENT_BOTTOM + 20) addPage();
         page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_SIZE[0] - MARGIN, y }, thickness: 0.8, color: rgb(0.65, 0.65, 0.65) });
@@ -251,11 +240,6 @@ async function generateOutsourcedReportPdf(report, form, group, profile) {
     const values = report.values || {};
     const normalizeLabel = (label) => String(label || '').replace(/\s+/g, '');
     const findField = (matcher) => (form?.fields || []).find((field) => matcher(field));
-    const valueFor = (field) => {
-        if (!field) return '-';
-        const formatted = formatFieldValue(field, values[field.fieldId]);
-        return (formatted === undefined || formatted === null || formatted === '') ? '-' : String(formatted);
-    };
 
     const submitterName = report.submitted_by_name || report.submitted_by_username || '';
     const positionText = profile?.position || '-';
@@ -279,10 +263,7 @@ async function generateOutsourcedReportPdf(report, form, group, profile) {
     y -= 6;
     drawDivider();
 
-    // ─── สรุปการปฏิบัติงาน — เขียนผูกกับ field label ของฟอร์มงานกล้องโทรทัศน์วงจรปิด ───
-    drawLine('สรุปการปฏิบัติงาน:', FONT_SIZE, rgb(0, 0, 0), true);
-    y -= 2;
-
+    // ─── ฟิลด์เดิมของฟอร์มงานกล้องฯ ที่ไม่แสดงในหน้าแรกแล้ว — คงไว้เพื่อตัดออกจาก fallback ด้านล่างเท่านั้น ───
     const typeField = findField((field) => normalizeLabel(field.label) === 'ประเภทงาน');
     const placeField = findField((field) => normalizeLabel(field.label) === 'ชื่อสถานที่หรือจุดปฏิบัติงาน');
     const projectField = findField((field) => normalizeLabel(field.label) === 'โครงการ');
@@ -292,34 +273,55 @@ async function generateOutsourcedReportPdf(report, form, group, profile) {
     const actionField = findField((field) => normalizeLabel(field.label).startsWith('การดำเนินการ'));
     const equipField = findField((field) => field.type === 'radio' && (field.options || []).includes('มี') && (field.options || []).includes('ไม่มี'));
     const remarkField = findField((field) => field.type === 'textarea') || findField((field) => normalizeLabel(field.label).includes('หมายเหตุ'));
+    const summaryField = findField((field) => field.type === 'table' && normalizeLabel(field.label) === 'สรุปการปฏิบัติงาน');
+    const problemsField = findField((field) => field.type === 'table' && normalizeLabel(field.label).startsWith('ปัญหา/อุปสรรค'));
+    const followUpField = findField((field) => field.type === 'table' && normalizeLabel(field.label).startsWith('งานที่ต้องติดตาม'));
 
-    drawInfoLine([{ text: 'ประเภทงาน : ' }, { text: valueFor(typeField), value: true }]);
-    drawInfoLine([{ text: 'สถานที่หรือจุดปฏิบัติงาน ' }, { text: valueFor(placeField), value: true }]);
-    drawInfoRow(
-        [{ text: 'โครงการ : ' }, { text: valueFor(projectField), value: true }],
-        [{ text: 'พิกัด ' }, { text: valueFor(coordField), value: true }]
-    );
-    drawInfoRow(
-        [{ text: 'สถานะเครือข่าย : ' }, { text: valueFor(networkField), value: true }],
-        [{ text: 'สถานะไฟฟ้า : ' }, { text: valueFor(powerField), value: true }]
-    );
-    drawInfoLine([{ text: 'การดำเนินการ : ' }, { text: valueFor(actionField), value: true }]);
-    y -= 4;
+    // ─── สรุปการปฏิบัติงาน / ปัญหา-อุปสรรค / งานที่ต้องติดตาม — รวมจากทุกรายงานวันเดียวกัน เรียงเลขลำดับ ───
+    const drawDottedPlaceholder = () => {
+        const prefix = '1. ';
+        const maxWidth = PAGE_SIZE[0] - 2 * MARGIN;
+        const prefixWidth = font.widthOfTextAtSize(prefix, FONT_SIZE);
+        const dotWidth = font.widthOfTextAtSize('.', FONT_SIZE);
+        const dotsCount = Math.max(0, Math.floor((maxWidth - prefixWidth) / dotWidth));
+        drawLine(prefix + '.'.repeat(dotsCount), FONT_SIZE, rgb(0, 0, 0));
+    };
 
-    drawLine('รายละเอียดการติดตั้งครุภัณฑ์', FONT_SIZE, rgb(0, 0, 0), true);
-    drawLine(valueFor(equipField), FONT_SIZE, rgb(0, 0, 0), true);
-    if (equipField) {
-        const children = selectedChildren(equipField, values[equipField.fieldId]);
-        if (children.length) drawSubformTable(children, values);
-    }
+    const drawNumberedSection = (title, rows, { placeholderWhenEmpty = false } = {}) => {
+        drawLine(title, FONT_SIZE, rgb(0, 0, 0), true);
+        if (!rows.length) {
+            if (placeholderWhenEmpty) drawDottedPlaceholder();
+            return;
+        }
+        rows.forEach((text, index) => drawLine(`${index + 1}. ${text}`, FONT_SIZE, rgb(0, 0, 0), true));
+    };
 
-    drawLine('หมายเหตุ', FONT_SIZE, rgb(0, 0, 0), true);
-    drawLine(valueFor(remarkField), FONT_SIZE, rgb(0, 0, 0), true);
+    drawNumberedSection('สรุปการปฏิบัติงาน:', dailySections?.summary || []);
+    y -= 6;
+    drawNumberedSection('ปัญหา/อุปสรรค(ถ้ามี):', dailySections?.problems || [], { placeholderWhenEmpty: true });
+    y -= 6;
+    drawNumberedSection('งานที่ต้องติดตามต่อในวันพรุ่งนี้:', dailySections?.followUps || [], { placeholderWhenEmpty: true });
+    y -= 14;
+
+    // ─── ช่องลงชื่อ (จัดกลางหน้า) ─────────────────────────────────────────────
+    const drawCentered = (text, bold = false) => {
+        if (y < CONTENT_BOTTOM + LINE_HEIGHT) addPage();
+        const width = fontFor(bold).widthOfTextAtSize(text, FONT_SIZE);
+        drawText(text, { x: (PAGE_SIZE[0] - width) / 2, y, size: FONT_SIZE, color: rgb(0, 0, 0) }, bold);
+        y -= FONT_SIZE + 8;
+    };
+    const signatureLine = (roleLabel) => `ลงชื่อ${'.'.repeat(40)}${roleLabel}`;
+
+    drawCentered(signatureLine('ผู้รับจ้าง'));
+    drawCentered(`(${submitterName || ''})`);
+    y -= 28;
+    drawCentered(signatureLine('คณะกรรมการ'));
+    drawCentered('(                              )');
     y -= 14;
 
     // ─── ฟิลด์อื่นที่ไม่ตรงกับแบบฟอร์มงานกล้องฯ (เผื่อแก้ไขฟอร์มในอนาคต) — แสดงต่อท้ายแบบทั่วไป ───
     const consumedFieldIds = new Set(
-        [typeField, placeField, projectField, coordField, networkField, powerField, actionField, equipField, remarkField]
+        [typeField, placeField, projectField, coordField, networkField, powerField, actionField, equipField, remarkField, summaryField, problemsField, followUpField]
             .filter(Boolean)
             .map((field) => field.fieldId)
     );

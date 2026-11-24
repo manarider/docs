@@ -122,10 +122,10 @@ describe('Outsourced nested form fields', () => {
         const rectangleSpy = jest.spyOn(PDFPage.prototype, 'drawRectangle');
         try {
             const pdf = await generateOutsourcedReportPdf(
-                { report_date: new Date(), submitted_by_username: 'tester', values: { present: 'มี', detail: 'ตรวจสอบแล้ว', code: 'AB-123', people: [{ name: 'สมชาย', code: 12 }] } },
+                { report_date: new Date(), submitted_by_username: 'tester', values: { present: 'ใช่', detail: 'ตรวจสอบแล้ว', code: 'AB-123', people: [{ name: 'สมชาย', code: 12 }] } },
                 { name: 'รายงาน', fields: [{
-                    fieldId: 'present', label: 'มีรายชื่อหรือไม่', type: 'radio', options: ['มี', 'ไม่มี'],
-                    radioOptions: [{ value: 'มี', fields: [
+                    fieldId: 'present', label: 'มีรายชื่อหรือไม่', type: 'radio', options: ['ใช่', 'ไม่ใช่'],
+                    radioOptions: [{ value: 'ใช่', fields: [
                         { fieldId: 'detail', label: 'รายละเอียด', type: 'text' },
                         { fieldId: 'code', label: 'รหัสงาน', type: 'text' },
                         { fieldId: 'people', label: 'รายชื่อ', type: 'table', tableColumns: [{ columnId: 'name', label: 'ชื่อ' }, { columnId: 'code', label: 'รหัส' }] },
@@ -217,6 +217,45 @@ describe('Outsourced nested form fields', () => {
         } finally {
             textSpy.mockRestore();
             rectangleSpy.mockRestore();
+        }
+    });
+    test('aggregates daily summary/problem/follow-up sections, drops legacy fields, and centers the signature block', async () => {
+        const textSpy = jest.spyOn(PDFPage.prototype, 'drawText');
+        try {
+            const pdf = await generateOutsourcedReportPdf(
+                { report_date: new Date(), submitted_by_name: 'นายทดสอบ ระบบ', values: { oldType: ['ตรวจสอบ A'] } },
+                { name: 'รายงาน', fields: [
+                    { fieldId: 'oldType', label: 'ประเภทงาน', type: 'checkbox', options: ['ตรวจสอบ A'] },
+                ] },
+                { name: 'กลุ่มงาน' },
+                null,
+                { summary: ['งานที่ 1', 'งานที่ 2'], problems: [], followUps: ['ติดตามพรุ่งนี้ 1'] }
+            );
+
+            expect(Buffer.from(pdf).subarray(0, 4).toString()).toBe('%PDF');
+
+            // ฟิลด์เดิม (ประเภทงาน ฯลฯ) ต้องไม่แสดงในหน้าแรกอีกต่อไป
+            expect(textSpy.mock.calls.some(([text]) => String(text).includes('ประเภทงาน'))).toBe(false);
+
+            // สรุปการปฏิบัติงาน — เรียงเลขลำดับจากหลายรายงานในวันเดียวกัน
+            expect(textSpy.mock.calls.some(([text]) => text === '1. งานที่ 1')).toBe(true);
+            expect(textSpy.mock.calls.some(([text]) => text === '2. งานที่ 2')).toBe(true);
+
+            // ปัญหา/อุปสรรค — ไม่มีข้อมูล ต้องแสดงบรรทัดว่างเลข 1 พร้อมจุดไข่ปลา
+            const placeholderCall = textSpy.mock.calls.find(([text]) => /^1\. \.{5,}$/.test(text));
+            expect(placeholderCall).toBeDefined();
+
+            // งานที่ต้องติดตามต่อในวันพรุ่งนี้ — มีข้อมูล 1 รายการ
+            expect(textSpy.mock.calls.some(([text]) => text === '1. ติดตามพรุ่งนี้ 1')).toBe(true);
+
+            // ช่องลงชื่อ: จัดกลางหน้า (x ต้องมากกว่าระยะขอบซ้ายปรกติอย่างมีนัยสำคัญ) และมีชื่อผู้ส่งมอบงานในวงเล็บ
+            const signatureCall = textSpy.mock.calls.find(([text]) => String(text).startsWith('ลงชื่อ') && text.includes('ผู้รับจ้าง'));
+            expect(signatureCall).toBeDefined();
+            expect(signatureCall[1].x).toBeGreaterThan(80);
+            expect(textSpy.mock.calls.some(([text]) => text === '(นายทดสอบ ระบบ)')).toBe(true);
+            expect(textSpy.mock.calls.some(([text]) => String(text).startsWith('ลงชื่อ') && text.includes('คณะกรรมการ'))).toBe(true);
+        } finally {
+            textSpy.mockRestore();
         }
     });
 });
